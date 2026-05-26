@@ -1,5 +1,5 @@
-<!-- Before changing auth code, read CLAUDE.md — the Jira UI-session gate is real;
-     do not replace cookie auth with API tokens. -->
+<!-- Before changing auth code, see the README "Auth model" — the Jira UI-session
+     gate is real; do not replace cookie auth with API tokens. -->
 
 ## Summary
 

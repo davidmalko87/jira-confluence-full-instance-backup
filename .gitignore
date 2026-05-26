@@ -59,8 +59,10 @@ archive/
 *.7z
 *.zip
 
-# Claude Code — personal memory, not shared
+# Claude Code — personal/local, not shared in the public repo
+CLAUDE.md
 CLAUDE.local.md
+CLAUDE_CODE_BOOTSTRAP.md
 .claude/
 
 # Jenkins workspace artifacts
