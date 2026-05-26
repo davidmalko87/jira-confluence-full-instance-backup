@@ -24,6 +24,7 @@ SPEC = [
     ("archive_name_template","ARCHIVE_NAME_TEMPLATE",            False, naming.DEFAULT_ARCHIVE_TEMPLATE),
     ("archive_compression",  "ARCHIVE_COMPRESSION",              False, "5"),
     ("backup_cron",          "BACKUP_CRON",                      False, "H 2 * * 4"),
+    ("poll_timeout",         "POLL_TIMEOUT",                     False, "21600"),
     ("python_bin",           "PYTHON_BIN",                       False, ""),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
@@ -59,6 +60,7 @@ class Config:
     archive_name_template: str = naming.DEFAULT_ARCHIVE_TEMPLATE
     archive_compression: str = "5"
     backup_cron: str = "H 2 * * 4"
+    poll_timeout: str = "21600"
     python_bin: str = ""
     storage_provider: str = "local"
     storage_dest: str = ""

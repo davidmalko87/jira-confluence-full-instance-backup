@@ -72,7 +72,7 @@ def trigger_backup(site: str, auth_header: str) -> dict:
 
 
 def poll_progress(site: str, auth_header: str,
-                  timeout_sec: int = 3600, interval_sec: int = 30) -> dict:
+                  timeout_sec: int = 21600, interval_sec: int = 30) -> dict:
     """
     GET /wiki/rest/obm/1.0/getprogress
     Completion when currentStatus contains 'completed' / file ready.
@@ -179,7 +179,7 @@ def test_connection(site: str, email: str, token: str) -> tuple[bool, str]:
 
 def run_backup(site: str, email: str, token: str, out_dir: Path,
                name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
-               poll_timeout: int = 3600) -> Path:
+               poll_timeout: int = 21600) -> Path:
     """Full trigger→poll→download flow. Returns the downloaded .zip path."""
     auth_header = basic_auth_header(email, token)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -206,7 +206,10 @@ def main():
     parser.add_argument("--site", required=True,
                         help="Confluence root, e.g. https://<YOUR_SITE>.atlassian.net/wiki")
     parser.add_argument("--out", required=True, type=Path)
-    parser.add_argument("--poll-timeout", type=int, default=3600)
+    parser.add_argument("--poll-timeout", type=int,
+                        default=int(os.environ.get("POLL_TIMEOUT", "21600")),
+                        help="Max seconds to wait for backup to complete "
+                             "(default 21600 = 6h; env: POLL_TIMEOUT)")
     parser.add_argument("--name-template",
                         default=os.environ.get("PRODUCT_NAME_TEMPLATE",
                                                naming.DEFAULT_PRODUCT_TEMPLATE),
