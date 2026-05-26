@@ -72,6 +72,38 @@ def setupVenv() {
     }
 }
 
+// Send notifications. Binds jira-cookies too so backup.notify can warn when the
+// session cookie is near expiry. Never fails the build.
+def runNotify(String status) {
+    def channels = (env.NOTIFY_CHANNELS ?: '').split(',').collect { it.trim() }.findAll { it }
+    def needsWebhook = channels.any { it in ['google-chat', 'slack', 'discord', 'teams', 'webhook'] }
+    def needsEmail = channels.contains('email')
+    if (!needsWebhook && !needsEmail) {
+        echo "No notification channels configured — skipping notify."
+        return
+    }
+    def creds = [string(credentialsId: 'jira-cookies', variable: 'JIRA_COOKIES')]
+    if (needsWebhook) {
+        creds << string(credentialsId: 'notify-webhook-url', variable: 'NOTIFY_WEBHOOK_URL')
+    }
+    if (needsEmail) {
+        creds << string(credentialsId: 'smtp-host',     variable: 'SMTP_HOST')
+        creds << string(credentialsId: 'smtp-from',     variable: 'SMTP_FROM')
+        creds << string(credentialsId: 'smtp-to',       variable: 'SMTP_TO')
+        creds << string(credentialsId: 'smtp-user',     variable: 'SMTP_USER')
+        creds << string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')
+    }
+    try {
+        withCredentials(creds) {
+            runPy("-m backup.notify --channels \"${env.NOTIFY_CHANNELS}\" " +
+                  "--status ${status} --archive-dir \"${env.ARCHIVE_DIR}\" " +
+                  "--build-url \"${env.BUILD_URL}\"")
+        }
+    } catch (err) {
+        echo "notify failed (non-fatal): ${err.message}"
+    }
+}
+
 pipeline {
     agent any
 
@@ -197,40 +229,21 @@ pipeline {
                 }
             }
         }
+
+        stage('Notify') {
+            steps {
+                script { runNotify('success') }
+            }
+        }
     }
 
     post {
+        // The Notify stage handles the success path (and shows as its own box).
+        // On failure the success stages are skipped, so notify from here instead.
+        failure {
+            script { runNotify('failure') }
+        }
         always {
-            script {
-                def status = currentBuild.currentResult == 'SUCCESS' ? 'success' : 'failure'
-                def channels = (env.NOTIFY_CHANNELS ?: '').split(',').collect { it.trim() }
-                def needsWebhook = channels.any { it in ['google-chat', 'slack', 'discord', 'teams', 'webhook'] }
-                def needsEmail = channels.contains('email')
-
-                def creds = []
-                if (needsWebhook) {
-                    creds << string(credentialsId: 'notify-webhook-url', variable: 'NOTIFY_WEBHOOK_URL')
-                }
-                if (needsEmail) {
-                    creds << string(credentialsId: 'smtp-host',     variable: 'SMTP_HOST')
-                    creds << string(credentialsId: 'smtp-from',     variable: 'SMTP_FROM')
-                    creds << string(credentialsId: 'smtp-to',       variable: 'SMTP_TO')
-                    creds << string(credentialsId: 'smtp-user',     variable: 'SMTP_USER')
-                    creds << string(credentialsId: 'smtp-password', variable: 'SMTP_PASSWORD')
-                }
-
-                if (creds) {
-                    withCredentials(creds) {
-                        try {
-                            runPy("-m backup.notify --channels \"${env.NOTIFY_CHANNELS}\" " +
-                                  "--status ${status} --archive-dir \"${env.ARCHIVE_DIR}\" " +
-                                  "--build-url \"${env.BUILD_URL}\"")
-                        } catch (ignored) {
-                            echo "notify failed (non-fatal)"
-                        }
-                    }
-                }
-            }
             cleanWs()
         }
     }

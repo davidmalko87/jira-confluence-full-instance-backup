@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.5.0] - 2026-05-26
+
+### Added
+- **Visible `Notify` stage** in the Jenkins pipeline (instead of only a post-action), so notification shows as its own box in the Stage View / Blue Ocean.
+- **Cookie-expiry warning in notifications** — every notification warns when the Jira session cookie is within 7 days of expiry (or already expired), so operators refresh it before a backup fails.
+- **Focused cookie refresh** — `main.py` → *Refresh Jira cookies* (menu) / `--refresh-cookies`: paste a fresh Copy-as-cURL, it's validated (optionally live-tested), saved to `.env`, and a tiny `update-jira-cookies.groovy` is generated that updates **only** the `jira-cookies` credential in Jenkins.
+- `docs`: Blue Ocean note for visual stage tracking; monthly cookie-refresh walkthrough.
+
+---
+
 ## [0.4.0] - 2026-05-26
 
 ### Added
@@ -76,6 +86,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.5.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.0
 [0.4.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.4.0
 [0.3.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.3.0
 [0.2.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.2.0

@@ -181,3 +181,38 @@ def write(cfg: config.Config, path: Path, **kwargs) -> tuple[Path, list[str]]:
     except OSError:
         pass
     return path, summary
+
+
+_COOKIE_TEMPLATE = """\
+// Update ONLY the jira-cookies credential. Paste into:
+// Manage Jenkins -> Script Console -> Run. CONTAINS A SECRET — delete after running.
+import com.cloudbees.plugins.credentials.CredentialsScope
+import com.cloudbees.plugins.credentials.SystemCredentialsProvider
+import com.cloudbees.plugins.credentials.domains.Domain
+import org.jenkinsci.plugins.plaincredentials.impl.StringCredentialsImpl
+import hudson.util.Secret
+
+def store = SystemCredentialsProvider.getInstance().getStore()
+def domain = Domain.global()
+def b64d = { String s -> new String(s.decodeBase64(), "UTF-8") }
+def cred = new StringCredentialsImpl(CredentialsScope.GLOBAL, "jira-cookies",
+                                     "jira-cookies", Secret.fromString(b64d('%%BLOB%%')))
+def existing = store.getCredentials(domain).find { it.id == "jira-cookies" }
+if (existing != null) { store.updateCredentials(domain, existing, cred); println("Updated jira-cookies") }
+else { store.addCredentials(domain, cred); println("Created jira-cookies") }
+println("Done. Delete update-jira-cookies.groovy — it contains the cookie blob.")
+"""
+
+
+def build_cookie_update(cfg: config.Config) -> str:
+    """Groovy that updates only the jira-cookies credential (for monthly refresh)."""
+    return _COOKIE_TEMPLATE.replace("%%BLOB%%", _b64(cfg.jira_cookies))
+
+
+def write_cookie_update(cfg: config.Config, path: Path) -> Path:
+    path.write_text(build_cookie_update(cfg), encoding="utf-8")
+    try:
+        path.chmod(0o600)
+    except OSError:
+        pass
+    return path
