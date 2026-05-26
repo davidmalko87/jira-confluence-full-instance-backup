@@ -1,0 +1,5 @@
+# Optional — nicer interactive output (progress bars, colored status, tables).
+# The tool works without it (plain ASCII fallback); install for a better
+# experience when running the interactive menu on a VM.
+-r requirements.txt
+rich>=13.0.0

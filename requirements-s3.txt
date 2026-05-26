@@ -1,0 +1,5 @@
+# Optional — install when STORAGE_PROVIDER=s3
+# Covers AWS S3 and S3-compatible stores (Cloudflare R2, Backblaze B2, MinIO,
+# DigitalOcean Spaces) via --endpoint-url.
+-r requirements.txt
+boto3>=1.34.0

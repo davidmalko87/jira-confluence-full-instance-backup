@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ── Secrets — NEVER commit (real values live in Jenkins Credentials) ──
+# Env files: ignore real ones, keep the placeholder template
+.env
+.env.*
+!.env.example
+config.local.*
+*.json.local
+
+# Keys & certificates
+*.key
+*.pem
+*.p12
+*.pfx
+
+# GCP service-account keys
+#   README step 2 generates sa-key.json; Jenkins cred id is gcp-backup-sa-key
+credentials*.json
+service-account*.json
+sa-key*.json
+*sa-key*.json
+*-key.json
+*_key.json
+
+# Jira UI session cookie blobs — the critical Jira secret
+cookies.txt
+*cookie*.txt
+*cookie*.json
+jira-cookies*
+
+# Token / auth caches (exact name AND glob — don't rely on a glob alone)
+.cache
+.cache-*
+.cache/
+
+# Backup artifacts (local testing)
+out/
+archive/
+*.7z
+*.zip
+
+# Claude Code — personal memory, not shared
+CLAUDE.local.md
+.claude/
+
+# Jenkins workspace artifacts
+workspace/
