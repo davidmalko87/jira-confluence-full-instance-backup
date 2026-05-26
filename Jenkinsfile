@@ -96,12 +96,23 @@ def runNotify(String status) {
     try {
         withCredentials(creds) {
             runPy("-m backup.notify --channels \"${env.NOTIFY_CHANNELS}\" " +
-                  "--status ${status} --archive-dir \"${env.ARCHIVE_DIR}\" " +
+                  "--status ${status.toLowerCase()} --archive-dir \"${env.ARCHIVE_DIR}\" " +
                   "--build-url \"${env.BUILD_URL}\"")
         }
     } catch (err) {
         echo "notify failed (non-fatal): ${err.message}"
     }
+}
+
+// True when at least one product backup (.zip) landed in OUT_DIR. Lets the
+// pipeline archive + upload whatever succeeded even if a product stage failed
+// or was skipped — a cooldown marker alone does NOT count as a backup.
+def hasBackups() {
+    def py = "import glob,os,sys; sys.exit(0 if glob.glob(os.path.join(os.environ['OUT_DIR'], '*.zip')) else 1)"
+    if (isUnix()) {
+        return sh(returnStatus: true, script: "${venvPython()} -c \"${py}\"") == 0
+    }
+    return powershell(returnStatus: true, script: "${venvPython()} -c \"${py}\"") == 0
 }
 
 pipeline {
@@ -125,6 +136,15 @@ pipeline {
     // Editable per run via "Build with Parameters"; defaults come from the global
     // env vars set by jenkins-setup.groovy.
     parameters {
+        // --- What to back up (untick to skip a product entirely) ---
+        booleanParam(name: 'BACKUP_JIRA', defaultValue: true,
+                     description: 'Run the Jira backup stage')
+        booleanParam(name: 'BACKUP_CONFLUENCE', defaultValue: true,
+                     description: 'Run the Confluence backup stage')
+        booleanParam(name: 'JIRA_DOWNLOAD_EXISTING', defaultValue: false,
+                     description: 'Jira: do not trigger a new backup — download the most recent ' +
+                                  'existing one (use on cooldown / reruns)')
+
         // --- Storage targets: tick a box per backend, fill its destination below it.
         //     Defaults come from the global env vars set by jenkins-setup.groovy. ---
         booleanParam(name: 'STORE_GCS', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('gcs'),
@@ -225,38 +245,59 @@ pipeline {
             }
         }
 
+        // Jira and Confluence are INDEPENDENT: a failure (or cooldown) in one must
+        // not abort the other or the archive/upload of whatever did succeed.
+        // catchError marks the stage red + the build UNSTABLE, then continues.
         stage('Jira backup') {
+            when { expression { params.BACKUP_JIRA } }
             steps {
-                withCredentials([
-                    string(credentialsId: 'jira-cookies', variable: 'JIRA_COOKIES')
-                ]) {
-                    script { runPy("-m backup.jira --site \"${SITE_JIRA}\" --out \"${OUT_DIR}\"") }
+                catchError(message: 'Jira backup failed — continuing with other stages',
+                           buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    withCredentials([
+                        string(credentialsId: 'jira-cookies', variable: 'JIRA_COOKIES')
+                    ]) {
+                        script {
+                            def extra = params.JIRA_DOWNLOAD_EXISTING ? ' --download-existing' : ''
+                            runPy("-m backup.jira --site \"${SITE_JIRA}\" --out \"${OUT_DIR}\"${extra}")
+                        }
+                    }
                 }
             }
         }
 
         stage('Confluence backup') {
+            when { expression { params.BACKUP_CONFLUENCE } }
             steps {
-                withCredentials([
-                    string(credentialsId: 'atlassian-email',     variable: 'ATL_EMAIL'),
-                    string(credentialsId: 'atlassian-api-token', variable: 'ATL_TOKEN')
-                ]) {
-                    script { runPy("-m backup.confluence --site \"${SITE_CONFLUENCE}\" --out \"${OUT_DIR}\"") }
+                catchError(message: 'Confluence backup failed — continuing with other stages',
+                           buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                    withCredentials([
+                        string(credentialsId: 'atlassian-email',     variable: 'ATL_EMAIL'),
+                        string(credentialsId: 'atlassian-api-token', variable: 'ATL_TOKEN')
+                    ]) {
+                        script { runPy("-m backup.confluence --site \"${SITE_CONFLUENCE}\" --out \"${OUT_DIR}\"") }
+                    }
                 }
             }
         }
 
         stage('Archive') {
             steps {
-                withCredentials([
-                    string(credentialsId: 'archive-password', variable: 'ARCHIVE_PASSWORD')
-                ]) {
-                    script { runPy("-m backup.archive --in \"${OUT_DIR}\" --out \"${ARCHIVE_DIR}\"") }
+                script {
+                    if (!hasBackups()) {
+                        unstable('No Jira or Confluence backup was produced — skipping Archive and Upload.')
+                        return
+                    }
+                    withCredentials([
+                        string(credentialsId: 'archive-password', variable: 'ARCHIVE_PASSWORD')
+                    ]) {
+                        runPy("-m backup.archive --in \"${OUT_DIR}\" --out \"${ARCHIVE_DIR}\"")
+                    }
                 }
             }
         }
 
         stage('Upload') {
+            when { expression { hasBackups() } }
             steps {
                 script {
                     // STORAGE_PROVIDER may be a comma list -> bind the union of creds.
@@ -288,14 +329,16 @@ pipeline {
 
         stage('Notify') {
             steps {
-                script { runNotify('success') }
+                // Report the REAL outcome: SUCCESS, or UNSTABLE when a product
+                // stage failed/was skipped but the rest still completed.
+                script { runNotify(currentBuild.currentResult) }
             }
         }
     }
 
     post {
-        // The Notify stage handles the success path (and shows as its own box).
-        // On failure the success stages are skipped, so notify from here instead.
+        // The Notify stage handles the success / unstable paths (and shows as its
+        // own box). A hard FAILURE skips it, so notify from here instead.
         failure {
             script { runNotify('failure') }
         }

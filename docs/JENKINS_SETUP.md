@@ -238,6 +238,10 @@ properties → Environment variables*.
 defaults to your configured values, so you can tweak a one-off run without
 changing your saved config:
 
+- **What to back up** — `BACKUP_JIRA` / `BACKUP_CONFLUENCE` checkboxes (untick
+  one to back up only the other). `JIRA_DOWNLOAD_EXISTING` skips triggering a
+  new Jira backup and just downloads the most recent existing one — useful on a
+  rerun or during the 48h cooldown.
 - **Storage** — a checkbox per backend (**GCS / S3 / Azure / Local**) with a
   destination field beneath each (bucket / container / directory). Tick every
   backend you want; the archive is uploaded to all ticked targets. (If nothing
@@ -250,6 +254,22 @@ changing your saved config:
 The pipeline assembles the underlying `STORAGE_PROVIDER` / `STORAGE_DEST` /
 `NOTIFY_CHANNELS` values from the ticked boxes at build time. The export creates
 the credentials for every provider you had configured.
+
+**Resilience — the stages are independent.** A Jira failure (expired cookies, an
+error) or the 48h cooldown does **not** abort the rest of the pipeline:
+
+- The Jira and Confluence stages fail *softly* — a problem in one marks the
+  build **UNSTABLE** (yellow) and the pipeline continues. Whatever backup did
+  succeed is still archived and uploaded.
+- On the Jira **48h cooldown**, the run can't trigger a fresh backup, so it
+  downloads the **most recent existing** Jira backup (still retained by
+  Atlassian) and ships that instead — so a rerun isn't wasted.
+- **Archive and Upload are skipped** only when *no* product produced a backup
+  `.zip` (the build is marked UNSTABLE) — a cooldown marker alone never creates
+  an empty upload.
+
+So to recover a run where Jira failed: just **Rerun** (or Build with Parameters
+→ tick `JIRA_DOWNLOAD_EXISTING`); Confluence + archive + upload proceed normally.
 
 ---
 
