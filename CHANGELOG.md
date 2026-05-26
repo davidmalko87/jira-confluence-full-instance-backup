@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.6.0] - 2026-05-27
+
+### Changed
+- **Jenkins "Build with Parameters" is now checkbox-driven** (no plugin required). Storage backends and notification channels are exposed as native `booleanParam` checkboxes — one per backend (GCS / S3 / Azure / Local, each with its own destination field) and one per channel (Google Chat / Slack / Discord / Teams / Email / Webhook) — instead of hand-typed comma lists. Compression is a `0`–`9` dropdown. The `Setup` stage reassembles the aligned `STORAGE_PROVIDER` / `STORAGE_DEST` / `NOTIFY_CHANNELS` values the Python layer expects, so nothing downstream changes. If no storage box is ticked the build falls back to a local copy, so a backup is never silently skipped.
+
+### Added
+- The Jenkins export now emits **per-provider destination global env vars** (`GCS_BUCKET`, `S3_BUCKET`, `AZURE_CONTAINER`, `LOCAL_PATH`) so the new checkbox destination fields prefill from your configured `.env`.
+
+---
+
 ## [0.5.1] - 2026-05-27
 
 ### Fixed
@@ -96,6 +106,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.6.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.6.0
 [0.5.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.1
 [0.5.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.0
 [0.4.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.4.0
