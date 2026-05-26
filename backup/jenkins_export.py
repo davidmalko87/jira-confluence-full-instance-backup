@@ -164,6 +164,19 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
             env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
             summary.append(f"global env {key} = {val}")
 
+    # Per-provider destination env vars — defaults for the Jenkins checkbox dest fields
+    # (the Jenkinsfile reassembles STORAGE_DEST from these at build time).
+    prov_list = [p.strip() for p in (cfg.storage_provider or "").split(",") if p.strip()]
+    dest_list = [d.strip() for d in (cfg.storage_dest or "").split(",")]
+    prov_dest_env = {"gcs": "GCS_BUCKET", "s3": "S3_BUCKET",
+                     "azure": "AZURE_CONTAINER", "local": "LOCAL_PATH"}
+    for i, prov in enumerate(prov_list):
+        key = prov_dest_env.get(prov)
+        val = dest_list[i] if i < len(dest_list) else ""
+        if key and val:
+            env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
+            summary.append(f"global env {key} = {val}")
+
     groovy = (_TEMPLATE
               .replace("%%CRED_BLOCK%%", "\n".join(creds))
               .replace("%%ENV_BLOCK%%", "\n".join(env_block))
