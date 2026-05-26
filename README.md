@@ -331,6 +331,15 @@ These are Atlassian platform constraints, not tool limitations:
 
 ---
 
+## Troubleshooting
+
+Run **Test connections** (menu option 9) first — it pinpoints which of Jira /
+Confluence / storage is misconfigured. Common errors and fixes (403 vs the 204
+"success", cookie refresh, the 48-hour cooldown, storage permissions, Jenkins)
+are in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
+
+---
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). In short: no secrets in the repo, keep
