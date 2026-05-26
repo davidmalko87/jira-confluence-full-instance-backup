@@ -234,14 +234,22 @@ plugin (Manage Jenkins → Plugins). Click a build → **Console Output** for de
 carried to Jenkins by the export), or in *Manage Jenkins → System → Global
 properties → Environment variables*.
 
-**Build with Parameters:** the job exposes provider(s), destination(s), notify
-channels, compression, and name templates as build parameters — defaulting to
-your configured values. Use **Build with Parameters** to override them for a
-one-off run without changing your saved config.
+**Build with Parameters:** the job exposes its run-time settings as a form that
+defaults to your configured values, so you can tweak a one-off run without
+changing your saved config:
 
-**Multiple storage targets:** set `STORAGE_PROVIDER` and `STORAGE_DEST` to
-aligned comma lists, e.g. `gcs,s3` + `my-gcs-bucket,my-s3-bucket` — the archive
-uploads to each. The export creates the credentials for every listed provider.
+- **Storage** — a checkbox per backend (**GCS / S3 / Azure / Local**) with a
+  destination field beneath each (bucket / container / directory). Tick every
+  backend you want; the archive is uploaded to all ticked targets. (If nothing
+  is ticked, the build falls back to a local copy so a backup is never lost.)
+- **Notifications** — a checkbox per channel (**Google Chat / Slack / Discord /
+  Teams / Email / Webhook**). Tick the ones to send a report to.
+- **Compression** — a `0`–`9` dropdown; **name templates** and **poll timeout**
+  remain free-text fields.
+
+The pipeline assembles the underlying `STORAGE_PROVIDER` / `STORAGE_DEST` /
+`NOTIFY_CHANNELS` values from the ticked boxes at build time. The export creates
+the credentials for every provider you had configured.
 
 ---
 

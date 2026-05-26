@@ -125,20 +125,49 @@ pipeline {
     // Editable per run via "Build with Parameters"; defaults come from the global
     // env vars set by jenkins-setup.groovy.
     parameters {
-        string(name: 'STORAGE_PROVIDER', defaultValue: "${env.STORAGE_PROVIDER ?: 'local'}",
-               description: 'Backend(s), comma list: gcs,s3,azure,local')
-        string(name: 'STORAGE_DEST', defaultValue: "${env.STORAGE_DEST ?: ''}",
-               description: 'Destination(s), comma list aligned 1:1 with STORAGE_PROVIDER')
+        // --- Storage targets: tick a box per backend, fill its destination below it.
+        //     Defaults come from the global env vars set by jenkins-setup.groovy. ---
+        booleanParam(name: 'STORE_GCS', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('gcs'),
+                     description: 'Upload to Google Cloud Storage')
+        string(name: 'GCS_BUCKET', defaultValue: "${env.GCS_BUCKET ?: ''}",
+               description: 'GCS bucket name (used when GCS is ticked)')
+        booleanParam(name: 'STORE_S3', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('s3'),
+                     description: 'Upload to AWS S3 / S3-compatible (R2 / B2 / MinIO / Spaces)')
+        string(name: 'S3_BUCKET', defaultValue: "${env.S3_BUCKET ?: ''}",
+               description: 'S3 bucket name (used when S3 is ticked)')
         string(name: 'S3_ENDPOINT_URL', defaultValue: "${env.S3_ENDPOINT_URL ?: ''}",
-               description: 'S3-compatible endpoint (R2/B2/MinIO/Spaces); s3 only')
-        string(name: 'NOTIFY_CHANNELS', defaultValue: "${env.NOTIFY_CHANNELS ?: ''}",
-               description: 'Comma list: google-chat,slack,discord,teams,email,webhook (blank = none)')
+               description: 'S3-compatible endpoint (R2 / B2 / MinIO / Spaces); blank for AWS')
+        booleanParam(name: 'STORE_AZURE', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('azure'),
+                     description: 'Upload to Azure Blob Storage')
+        string(name: 'AZURE_CONTAINER', defaultValue: "${env.AZURE_CONTAINER ?: ''}",
+               description: 'Azure container name (used when Azure is ticked)')
+        booleanParam(name: 'STORE_LOCAL', defaultValue: (env.STORAGE_PROVIDER ?: 'local').contains('local'),
+                     description: 'Copy to a local / mounted directory on the agent')
+        string(name: 'LOCAL_PATH', defaultValue: "${env.LOCAL_PATH ?: ''}",
+               description: 'Local directory (used when Local is ticked; blank = build archive dir)')
+
+        // --- Notifications: tick every channel you want a report sent to. ---
+        booleanParam(name: 'NOTIFY_GOOGLE_CHAT', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('google-chat'),
+                     description: 'Google Chat')
+        booleanParam(name: 'NOTIFY_SLACK', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('slack'),
+                     description: 'Slack')
+        booleanParam(name: 'NOTIFY_DISCORD', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('discord'),
+                     description: 'Discord')
+        booleanParam(name: 'NOTIFY_TEAMS', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('teams'),
+                     description: 'Microsoft Teams')
+        booleanParam(name: 'NOTIFY_EMAIL', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('email'),
+                     description: 'Email (SMTP)')
+        booleanParam(name: 'NOTIFY_WEBHOOK', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('webhook'),
+                     description: 'Generic webhook')
+
+        // --- Archive + timing ---
+        choice(name: 'ARCHIVE_COMPRESSION',
+               choices: ([(env.ARCHIVE_COMPRESSION ?: '5')] + ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']).unique(),
+               description: '7-Zip compression: 0 (store) - 9 (ultra)')
         string(name: 'PRODUCT_NAME_TEMPLATE', defaultValue: "${env.PRODUCT_NAME_TEMPLATE ?: '{product}-{date}'}",
                description: 'Tokens: {product}{site}{date}{time}{datetime}{timestamp}')
         string(name: 'ARCHIVE_NAME_TEMPLATE', defaultValue: "${env.ARCHIVE_NAME_TEMPLATE ?: 'atlassian-backup-{date}'}",
                description: 'Archive (.7z) filename template')
-        string(name: 'ARCHIVE_COMPRESSION', defaultValue: "${env.ARCHIVE_COMPRESSION ?: '5'}",
-               description: '7-Zip compression: 0 (store) - 9 (ultra)')
         string(name: 'POLL_TIMEOUT', defaultValue: "${env.POLL_TIMEOUT ?: '21600'}",
                description: 'Max seconds to wait for each backup to finish (default 21600 = 6h)')
     }
@@ -160,10 +189,31 @@ pipeline {
                     env.SITE_CONFLUENCE = env.SITE_CONFLUENCE ?: 'https://<YOUR_SITE>.atlassian.net/wiki'
                     // Run-time settings come from build parameters (whose defaults are
                     // the global env vars set by jenkins-setup.groovy).
-                    env.STORAGE_PROVIDER      = params.STORAGE_PROVIDER
-                    env.STORAGE_DEST          = params.STORAGE_DEST
-                    env.S3_ENDPOINT_URL       = params.S3_ENDPOINT_URL
-                    env.NOTIFY_CHANNELS       = params.NOTIFY_CHANNELS
+                    //
+                    // Assemble aligned STORAGE_PROVIDER / STORAGE_DEST comma lists from
+                    // the per-backend checkboxes + their destination fields, so the
+                    // Python upload layer keeps receiving the contract it expects.
+                    def provs = []
+                    def dests = []
+                    if (params.STORE_GCS)   { provs << 'gcs';   dests << (params.GCS_BUCKET ?: '') }
+                    if (params.STORE_S3)    { provs << 's3';    dests << (params.S3_BUCKET ?: '') }
+                    if (params.STORE_AZURE) { provs << 'azure'; dests << (params.AZURE_CONTAINER ?: '') }
+                    if (params.STORE_LOCAL) { provs << 'local'; dests << (params.LOCAL_PATH?.trim() ? params.LOCAL_PATH : env.ARCHIVE_DIR) }
+                    if (provs.isEmpty())    { provs << 'local'; dests << env.ARCHIVE_DIR }  // safety net: never silently skip upload
+                    env.STORAGE_PROVIDER = provs.join(',')
+                    env.STORAGE_DEST     = dests.join(',')
+                    env.S3_ENDPOINT_URL  = params.S3_ENDPOINT_URL
+
+                    // Notification channels from the per-channel checkboxes.
+                    def chans = []
+                    if (params.NOTIFY_GOOGLE_CHAT) chans << 'google-chat'
+                    if (params.NOTIFY_SLACK)       chans << 'slack'
+                    if (params.NOTIFY_DISCORD)     chans << 'discord'
+                    if (params.NOTIFY_TEAMS)       chans << 'teams'
+                    if (params.NOTIFY_EMAIL)       chans << 'email'
+                    if (params.NOTIFY_WEBHOOK)     chans << 'webhook'
+                    env.NOTIFY_CHANNELS = chans.join(',')
+
                     env.PRODUCT_NAME_TEMPLATE = params.PRODUCT_NAME_TEMPLATE
                     env.ARCHIVE_NAME_TEMPLATE = params.ARCHIVE_NAME_TEMPLATE
                     env.ARCHIVE_COMPRESSION   = params.ARCHIVE_COMPRESSION
