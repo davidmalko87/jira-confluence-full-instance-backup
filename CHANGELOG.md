@@ -6,10 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [0.5.1] - 2026-05-26
+## [0.5.1] - 2026-05-27
 
 ### Fixed
-- **Jira export download on modern Atlassian Cloud** — the completion response can point at `api.media.atlassian.com` rather than the legacy `/plugins/servlet/export/download/` servlet. `download_backup` now fetches a full URL directly (token embedded, no cookies) and prefers an explicit `downloadUrl`/`mediaUrl` field; on failure it surfaces the HTTP status, final URL, and response body instead of an opaque error. The full completion response is logged for diagnosing instance-specific download fields.
+- **Jira export download 404** — the completion `result` field is `<uuid>/binary`, but the download servlet (`/plugins/servlet/export/download/`) expects only the bare `<uuid>` (the browser uses `?fileId=<uuid>`, no `/binary`). Passing the `/binary` suffix produced a malformed media URL and a 404. `download_backup` now strips everything from the first slash before calling the servlet, and still fetches an explicit `downloadUrl`/`mediaUrl` full URL directly when present. On failure it surfaces the HTTP status, final URL, and response body; the full completion response is logged for diagnosing instance-specific download fields.
+
+### Changed
+- **Backup poll timeout is now generous and configurable** — Jira/Confluence exports can take from minutes to several hours. The per-backup wait default is raised from 1h to **6h** (`POLL_TIMEOUT` env / `--poll-timeout`), carried to Jenkins as a build parameter and global env var. The Jenkins build wall-clock `timeout` is raised from 2h to **8h** to cover long backups plus archive and upload.
 
 ---
 

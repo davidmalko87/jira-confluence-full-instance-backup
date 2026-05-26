@@ -113,7 +113,10 @@ pipeline {
     }
 
     options {
-        timeout(time: 2, unit: 'HOURS')
+        // Jira/Confluence exports can take from minutes to several hours; this is the
+        // hard wall-clock cap for the whole build (backup + archive + upload). The
+        // per-backup poll wait is governed separately by POLL_TIMEOUT (see parameters).
+        timeout(time: 8, unit: 'HOURS')
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '90'))
         disableConcurrentBuilds()
@@ -136,6 +139,8 @@ pipeline {
                description: 'Archive (.7z) filename template')
         string(name: 'ARCHIVE_COMPRESSION', defaultValue: "${env.ARCHIVE_COMPRESSION ?: '5'}",
                description: '7-Zip compression: 0 (store) - 9 (ultra)')
+        string(name: 'POLL_TIMEOUT', defaultValue: "${env.POLL_TIMEOUT ?: '21600'}",
+               description: 'Max seconds to wait for each backup to finish (default 21600 = 6h)')
     }
 
     environment {
@@ -162,6 +167,7 @@ pipeline {
                     env.PRODUCT_NAME_TEMPLATE = params.PRODUCT_NAME_TEMPLATE
                     env.ARCHIVE_NAME_TEMPLATE = params.ARCHIVE_NAME_TEMPLATE
                     env.ARCHIVE_COMPRESSION   = params.ARCHIVE_COMPRESSION
+                    env.POLL_TIMEOUT          = params.POLL_TIMEOUT
                     echo "Config: jira=${env.SITE_JIRA} storage=${env.STORAGE_PROVIDER}:" +
                          "${env.STORAGE_DEST} notify=${env.NOTIFY_CHANNELS ?: '(none)'}"
                     setupVenv()

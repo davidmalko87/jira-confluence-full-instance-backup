@@ -186,7 +186,7 @@ def get_last_task_id(site: str, cookies: dict) -> str | None:
 
 
 def poll_progress(site: str, cookies: dict, task_id: str,
-                  timeout_sec: int = 3600, interval_sec: int = 30) -> dict:
+                  timeout_sec: int = 21600, interval_sec: int = 30) -> dict:
     """
     GET /rest/backup/1/export/getProgress?taskId={taskId}
     Returns final response dict when backup is complete.
@@ -235,9 +235,14 @@ def download_backup(site: str, cookies: dict, download_ref: str, out_path: Path,
     if ref.startswith(("http://", "https://")):
         url, req_kwargs = ref, {"headers": {"User-Agent": USER_AGENT}}
     else:
+        # The completion `result` field is `<uuid>/binary`, but the download servlet
+        # expects only the bare `<uuid>` (the browser uses
+        # `?fileId=<uuid>`, no `/binary`). Passing the `/binary` suffix yields a
+        # malformed media URL and a 404. Strip everything from the first slash.
+        file_id = ref.split("/", 1)[0]
         url = f"{site}/plugins/servlet/export/download/"
         req_kwargs = {"headers": {"User-Agent": USER_AGENT}, "cookies": cookies,
-                      "params": {"fileId": ref}}
+                      "params": {"fileId": file_id}}
 
     bytes_written = 0
     with requests.get(url, stream=True, timeout=600, **req_kwargs) as resp:
@@ -311,7 +316,7 @@ def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
 
 def run_backup(site: str, cookies: dict, out_dir: Path,
                name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
-               poll_timeout: int = 3600) -> Path | None:
+               poll_timeout: int = 21600) -> Path | None:
     """Full trigger→poll→download flow. Returns the .zip path, or None on cooldown."""
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -357,8 +362,11 @@ def main():
                         help="Jira site root, e.g. https://<YOUR_SITE>.atlassian.net")
     parser.add_argument("--out", required=True, type=Path,
                         help="Output directory for downloaded backup")
-    parser.add_argument("--poll-timeout", type=int, default=3600,
-                        help="Max seconds to wait for backup to complete")
+    parser.add_argument("--poll-timeout", type=int,
+                        default=int(os.environ.get("POLL_TIMEOUT", "21600")),
+                        help="Max seconds to wait for backup to complete "
+                             "(default 21600 = 6h; env: POLL_TIMEOUT). Jira exports "
+                             "can take minutes to several hours.")
     parser.add_argument("--name-template",
                         default=os.environ.get("PRODUCT_NAME_TEMPLATE",
                                                naming.DEFAULT_PRODUCT_TEMPLATE),
