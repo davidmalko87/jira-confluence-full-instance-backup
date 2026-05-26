@@ -128,6 +128,26 @@ This turns your already-working local config into Jenkins credentials + the job.
 > The job uses *Pipeline script from SCM*, so Jenkins reads the `Jenkinsfile`
 > from the repo at build time — there is nothing to maintain inside Jenkins.
 
+### Is it safe to run on a production / shared Jenkins?
+
+Yes, with a quick review — the script is short and readable, and every change it
+makes is reversible. Before running it on a shared/production controller, know that it:
+
+- **Creates or updates credentials** with the listed IDs (`jira-cookies`, etc.).
+  If a credential with the same ID already exists, it is **overwritten** — check
+  for ID clashes first.
+- **Creates or updates a job** named `atlassian-full-backup` (overwrites one with
+  that name if it exists).
+- **Sets Jenkins *global* environment variables** (`SITE_JIRA`, `STORAGE_PROVIDER`,
+  `NOTIFY_CHANNELS`, `BACKUP_CRON`, …). These apply to **every job on the
+  controller** — on a shared controller, confirm none of those names collide with
+  other jobs. (On a dedicated backup controller this is a non-issue.)
+
+Recommendations: **read the generated `jenkins-setup.groovy` before running it**
+(Script Console executes as admin), prefer a **dedicated controller/agent** for
+backups, and **delete the file afterward** (it embeds your secrets). The console
+output prints only credential IDs, never values.
+
 ---
 
 ## 4. Manual setup
