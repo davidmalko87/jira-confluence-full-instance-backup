@@ -23,6 +23,7 @@ SPEC = [
     ("product_name_template","PRODUCT_NAME_TEMPLATE",            False, naming.DEFAULT_PRODUCT_TEMPLATE),
     ("archive_name_template","ARCHIVE_NAME_TEMPLATE",            False, naming.DEFAULT_ARCHIVE_TEMPLATE),
     ("archive_compression",  "ARCHIVE_COMPRESSION",              False, "5"),
+    ("backup_cron",          "BACKUP_CRON",                      False, "H 2 * * 4"),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
     ("gcp_credentials",      "GOOGLE_APPLICATION_CREDENTIALS",   False, ""),
@@ -56,6 +57,7 @@ class Config:
     product_name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE
     archive_name_template: str = naming.DEFAULT_ARCHIVE_TEMPLATE
     archive_compression: str = "5"
+    backup_cron: str = "H 2 * * 4"
     storage_provider: str = "local"
     storage_dest: str = ""
     gcp_credentials: str = ""

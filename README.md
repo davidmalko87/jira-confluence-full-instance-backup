@@ -284,7 +284,8 @@ All values come from environment variables, optionally loaded from `.env` (see `
 | `ARCHIVE_PASSWORD` | 7-Zip AES-256 passphrase (blank = unencrypted) |
 | `ARCHIVE_COMPRESSION` | 0–9 |
 | `PRODUCT_NAME_TEMPLATE` / `ARCHIVE_NAME_TEMPLATE` | Filename templates |
-| `STORAGE_PROVIDER` / `STORAGE_DEST` | Backend + bucket/container/dir |
+| `STORAGE_PROVIDER` / `STORAGE_DEST` | Backend + bucket/container/dir (aligned **comma lists** for multiple targets, e.g. `gcs,s3` + `bucketA,bucketB`) |
+| `BACKUP_CRON` | Jenkins schedule (default `H 2 * * 4`) |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint (s3 only) |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `AWS_*` / `AZURE_STORAGE_CONNECTION_STRING` | Provider credentials |
 | `NOTIFY_CHANNELS` | Comma list of channels |
