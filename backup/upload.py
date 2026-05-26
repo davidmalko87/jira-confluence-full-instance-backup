@@ -186,12 +186,45 @@ def run_upload(provider: str, dest: str, in_dir: Path, *,
     return keys
 
 
+def parse_targets(provider_csv: str, dest_csv: str) -> list[tuple[str, str]]:
+    """Pair a comma list of providers with a comma list of destinations.
+
+    'gcs,s3' + 'bucketA,bucketB' -> [('gcs','bucketA'), ('s3','bucketB')].
+    A single provider with a single dest is the common case.
+    """
+    providers = [p.strip() for p in (provider_csv or "").split(",") if p.strip()]
+    dests = [d.strip() for d in (dest_csv or "").split(",") if d.strip()]
+    if not providers:
+        raise RuntimeError("no storage provider set (STORAGE_PROVIDER)")
+    if len(providers) != len(dests):
+        raise RuntimeError(
+            f"provider/destination count mismatch: {len(providers)} provider(s) "
+            f"{providers} vs {len(dests)} dest(s) {dests} — they must align 1:1")
+    unknown = [p for p in providers if p not in BACKENDS]
+    if unknown:
+        raise RuntimeError(f"unknown provider(s) {unknown}; choose from "
+                           f"{', '.join(sorted(BACKENDS))}")
+    return list(zip(providers, dests))
+
+
+def run_upload_multi(provider_csv: str, dest_csv: str, in_dir: Path, *,
+                     endpoint_url: str | None = None, region: str | None = None) -> list[str]:
+    """Upload the archives to every provider:dest target."""
+    targets = parse_targets(provider_csv, dest_csv)
+    keys: list[str] = []
+    for provider, dest in targets:
+        if len(targets) > 1:
+            ui.section(f"-> {provider}:{dest}")
+        keys += run_upload(provider, dest, in_dir, endpoint_url=endpoint_url, region=region)
+    return keys
+
+
 def main():
     parser = argparse.ArgumentParser(description="Upload backups to a cloud object store")
-    parser.add_argument("--provider", choices=sorted(BACKENDS), default="gcs",
-                        help="Storage backend (default: gcs)")
+    parser.add_argument("--provider", default="gcs",
+                        help="Backend(s), comma list: gcs,s3,azure,local")
     parser.add_argument("--dest", required=True,
-                        help="Bucket / container / directory to upload into")
+                        help="Destination(s), comma list aligned 1:1 with --provider")
     parser.add_argument("--in", dest="in_dir", required=True, type=Path,
                         help="Directory containing .7z archives to upload")
     parser.add_argument("--endpoint-url", default=None,
@@ -203,8 +236,8 @@ def main():
         sys.exit(f"Input directory does not exist: {args.in_dir}")
 
     try:
-        run_upload(args.provider, args.dest, args.in_dir,
-                   endpoint_url=args.endpoint_url, region=args.region)
+        run_upload_multi(args.provider, args.dest, args.in_dir,
+                         endpoint_url=args.endpoint_url, region=args.region)
     except RuntimeError as exc:
         sys.exit(str(exc))
 

@@ -116,24 +116,25 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
     # Always create archive-password (the Archive stage binds it); empty = unencrypted.
     text("archive-password", cfg.archive_password)
 
-    prov = cfg.storage_provider
-    if prov == "gcs":
-        key = Path(cfg.gcp_credentials or "")
-        if key.is_file():
-            creds.append(_file_cred("gcp-backup-sa-key", key.name or "sa-key.json",
-                                    key.read_bytes()))
-            summary.append("gcp-backup-sa-key (secret file)")
-        else:
-            summary.append("!! gcp-backup-sa-key SKIPPED — key file not found at "
-                           f"'{cfg.gcp_credentials or '(unset)'}'")
-    elif prov == "s3":
-        if cfg.aws_access_key_id:
-            text("aws-access-key-id", cfg.aws_access_key_id)
-        if cfg.aws_secret_access_key:
-            text("aws-secret-access-key", cfg.aws_secret_access_key)
-    elif prov == "azure":
-        if cfg.azure_conn:
-            text("azure-storage-connection-string", cfg.azure_conn)
+    # STORAGE_PROVIDER may be a comma list — create credentials for each backend.
+    for prov in [p.strip() for p in (cfg.storage_provider or "").split(",") if p.strip()]:
+        if prov == "gcs":
+            key = Path(cfg.gcp_credentials or "")
+            if key.is_file():
+                creds.append(_file_cred("gcp-backup-sa-key", key.name or "sa-key.json",
+                                        key.read_bytes()))
+                summary.append("gcp-backup-sa-key (secret file)")
+            else:
+                summary.append("!! gcp-backup-sa-key SKIPPED — key file not found at "
+                               f"'{cfg.gcp_credentials or '(unset)'}'")
+        elif prov == "s3":
+            if cfg.aws_access_key_id:
+                text("aws-access-key-id", cfg.aws_access_key_id)
+            if cfg.aws_secret_access_key:
+                text("aws-secret-access-key", cfg.aws_secret_access_key)
+        elif prov == "azure":
+            if cfg.azure_conn:
+                text("azure-storage-connection-string", cfg.azure_conn)
 
     chans = cfg.notify_channels or ""
     if any(h in chans for h in _WEBHOOK_HINTS) and cfg.notify_webhook_url:
@@ -155,7 +156,8 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
                      ("NOTIFY_CHANNELS", cfg.notify_channels),
                      ("PRODUCT_NAME_TEMPLATE", cfg.product_name_template),
                      ("ARCHIVE_NAME_TEMPLATE", cfg.archive_name_template),
-                     ("ARCHIVE_COMPRESSION", cfg.archive_compression)):
+                     ("ARCHIVE_COMPRESSION", cfg.archive_compression),
+                     ("BACKUP_CRON", cfg.backup_cron)):
         if val:
             env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
             summary.append(f"global env {key} = {val}")

@@ -196,16 +196,21 @@ top to bottom: Setup → Jira → Confluence → Archive → Upload → Notify.
 
 ---
 
-## 6. Schedule
+## 6. Schedule & per-run options
 
-The schedule lives in the `Jenkinsfile`:
+**Schedule (cron):** driven by the `BACKUP_CRON` global env var (default
+`H 2 * * 4` = Thursday ~02:00). Set it in `python main.py` → Configure (it's
+carried to Jenkins by the export), or in *Manage Jenkins → System → Global
+properties → Environment variables*.
 
-```groovy
-triggers { cron('H 2 * * 4') }   // Thursday ~02:00
-```
+**Build with Parameters:** the job exposes provider(s), destination(s), notify
+channels, compression, and name templates as build parameters — defaulting to
+your configured values. Use **Build with Parameters** to override them for a
+one-off run without changing your saved config.
 
-No extra Jenkins config — the trigger registers on the first build. Edit the
-cron expression to change cadence.
+**Multiple storage targets:** set `STORAGE_PROVIDER` and `STORAGE_DEST` to
+aligned comma lists, e.g. `gcs,s3` + `my-gcs-bucket,my-s3-bucket` — the archive
+uploads to each. The export creates the credentials for every listed provider.
 
 ---
 

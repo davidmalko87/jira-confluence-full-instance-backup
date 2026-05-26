@@ -9,6 +9,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 ## [0.2.0] - 2026-05-26
 
 ### Added
+- **Multiple storage targets** — `STORAGE_PROVIDER` and `STORAGE_DEST` accept aligned comma lists (e.g. `gcs,s3` + `bucketA,bucketB`); the archive is uploaded to every target.
+- **Configurable schedule** — `BACKUP_CRON` (set in Configure / exported as a Jenkins global env var) drives the Jenkinsfile `cron` trigger; no longer hardcoded.
+- **Jenkins "Build with Parameters"** — provider(s), destination(s), channels, compression, and name templates are exposed as build parameters (defaulting to your configured values).
 - **Cross-platform `Jenkinsfile`** — runs on Linux (`sh`) and Windows (`powershell`) agents automatically.
 - **Export Jenkins setup** (`--export-jenkins` / menu option 13) — generates a Script Console Groovy script from your `.env` that creates all credentials, sets the non-secret config as Jenkins global env vars, and creates the pipeline job in one paste.
 - **Storage connection test** in *Test connections* — verifies the chosen backend (gcs/s3/azure/local) is reachable and writable.

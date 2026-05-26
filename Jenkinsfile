@@ -1,17 +1,16 @@
-// Atlassian weekly backup pipeline — cross-platform (Linux sh / Windows PowerShell)
-// Runs every Thursday ~02:00. Stages are independent: Jira cookie expiry does
-// NOT break the Confluence stage.
+// Atlassian weekly backup pipeline — cross-platform (Linux sh / Windows PowerShell).
+// Stages are independent: Jira cookie expiry does NOT break the Confluence stage.
 //
-// Storage and notifications are pluggable — set STORAGE_PROVIDER and
-// NOTIFY_CHANNELS below; the pipeline installs the matching SDK and binds the
-// matching credentials automatically.
+// Config comes from Jenkins GLOBAL env vars (set by the generated
+// jenkins-setup.groovy) and is overridable per build via "Build with Parameters".
+// Storage and notifications are pluggable; STORAGE_PROVIDER/STORAGE_DEST may be
+// comma lists to upload to several backends at once.
 //
 // Secrets are bound via withCredentials and read by the Python modules from the
-// environment — they are never interpolated into the command strings.
+// environment — never interpolated into command strings.
 
 def venvPython() { return isUnix() ? 'venv/bin/python' : 'venv\\Scripts\\python.exe' }
 
-// Run a backup.* module with the venv's Python, on either OS.
 def runPy(String args) {
     if (isUnix()) {
         sh "${venvPython()} ${args}"
@@ -20,7 +19,8 @@ def runPy(String args) {
     }
 }
 
-// Create the venv, install core + selected-provider deps, make work dirs.
+// Create the venv + install core and EACH selected provider's SDK (STORAGE_PROVIDER
+// may be a comma list). Reads env.STORAGE_PROVIDER (set in the Setup preflight).
 def setupVenv() {
     if (isUnix()) {
         sh '''
@@ -28,21 +28,25 @@ def setupVenv() {
             python3 -m venv venv
             venv/bin/python -m pip install --quiet --upgrade pip
             venv/bin/python -m pip install --quiet -r requirements.txt
-            if [ "$STORAGE_PROVIDER" != "local" ]; then
-                venv/bin/python -m pip install --quiet -r "requirements-${STORAGE_PROVIDER}.txt"
-            fi
+            for p in $(echo "$STORAGE_PROVIDER" | tr ',' ' '); do
+                if [ -n "$p" ] && [ "$p" != "local" ]; then
+                    venv/bin/python -m pip install --quiet -r "requirements-$p.txt"
+                fi
+            done
             mkdir -p "$OUT_DIR" "$ARCHIVE_DIR"
         '''
     } else {
-        // 7-Zip isn't on PATH for the Jenkins service by default on Windows.
         env.SEVEN_ZIP_PATH = 'C:\\Program Files\\7-Zip\\7z.exe'
         powershell '''
             $ErrorActionPreference = "Stop"
             python -m venv venv
             venv\\Scripts\\python.exe -m pip install --quiet --upgrade pip
             venv\\Scripts\\python.exe -m pip install --quiet -r requirements.txt
-            if ($env:STORAGE_PROVIDER -ne "local") {
-                venv\\Scripts\\python.exe -m pip install --quiet -r "requirements-$($env:STORAGE_PROVIDER).txt"
+            foreach ($p in ($env:STORAGE_PROVIDER -split ',')) {
+                $p = $p.Trim()
+                if ($p -and $p -ne "local") {
+                    venv\\Scripts\\python.exe -m pip install --quiet -r "requirements-$p.txt"
+                }
             }
             New-Item -ItemType Directory -Force -Path $env:OUT_DIR | Out-Null
             New-Item -ItemType Directory -Force -Path $env:ARCHIVE_DIR | Out-Null
@@ -54,7 +58,8 @@ pipeline {
     agent any
 
     triggers {
-        cron('H 2 * * 4')  // Thursday ~02:00
+        // Schedule from the BACKUP_CRON global env var (set by the export), else default.
+        cron("${env.BACKUP_CRON ?: 'H 2 * * 4'}")   // default: Thursday ~02:00
     }
 
     options {
@@ -62,6 +67,25 @@ pipeline {
         timestamps()
         buildDiscarder(logRotator(numToKeepStr: '90'))
         disableConcurrentBuilds()
+    }
+
+    // Editable per run via "Build with Parameters"; defaults come from the global
+    // env vars set by jenkins-setup.groovy.
+    parameters {
+        string(name: 'STORAGE_PROVIDER', defaultValue: "${env.STORAGE_PROVIDER ?: 'local'}",
+               description: 'Backend(s), comma list: gcs,s3,azure,local')
+        string(name: 'STORAGE_DEST', defaultValue: "${env.STORAGE_DEST ?: ''}",
+               description: 'Destination(s), comma list aligned 1:1 with STORAGE_PROVIDER')
+        string(name: 'S3_ENDPOINT_URL', defaultValue: "${env.S3_ENDPOINT_URL ?: ''}",
+               description: 'S3-compatible endpoint (R2/B2/MinIO/Spaces); s3 only')
+        string(name: 'NOTIFY_CHANNELS', defaultValue: "${env.NOTIFY_CHANNELS ?: ''}",
+               description: 'Comma list: google-chat,slack,discord,teams,email,webhook (blank = none)')
+        string(name: 'PRODUCT_NAME_TEMPLATE', defaultValue: "${env.PRODUCT_NAME_TEMPLATE ?: '{product}-{date}'}",
+               description: 'Tokens: {product}{site}{date}{time}{datetime}{timestamp}')
+        string(name: 'ARCHIVE_NAME_TEMPLATE', defaultValue: "${env.ARCHIVE_NAME_TEMPLATE ?: 'atlassian-backup-{date}'}",
+               description: 'Archive (.7z) filename template')
+        string(name: 'ARCHIVE_COMPRESSION', defaultValue: "${env.ARCHIVE_COMPRESSION ?: '5'}",
+               description: '7-Zip compression: 0 (store) - 9 (ultra)')
     }
 
     environment {
@@ -76,19 +100,18 @@ pipeline {
                 cleanWs()
                 checkout scm
                 script {
-                    // Non-secret config. The generated jenkins-setup.groovy sets these
-                    // as Jenkins GLOBAL env vars from your local .env; this block falls
-                    // back to placeholders only when they're unset. For a manual setup,
-                    // set them as global env vars (Manage Jenkins -> System) or edit here.
-                    env.SITE_JIRA             = env.SITE_JIRA             ?: 'https://<YOUR_SITE>.atlassian.net'
-                    env.SITE_CONFLUENCE       = env.SITE_CONFLUENCE       ?: 'https://<YOUR_SITE>.atlassian.net/wiki'
-                    env.STORAGE_PROVIDER      = env.STORAGE_PROVIDER      ?: 'local'
-                    env.STORAGE_DEST          = env.STORAGE_DEST          ?: '<YOUR_BUCKET>'
-                    env.S3_ENDPOINT_URL       = env.S3_ENDPOINT_URL       ?: ''
-                    env.NOTIFY_CHANNELS       = env.NOTIFY_CHANNELS       ?: ''
-                    env.PRODUCT_NAME_TEMPLATE = env.PRODUCT_NAME_TEMPLATE ?: '{product}-{date}'
-                    env.ARCHIVE_NAME_TEMPLATE = env.ARCHIVE_NAME_TEMPLATE ?: 'atlassian-backup-{date}'
-                    env.ARCHIVE_COMPRESSION   = env.ARCHIVE_COMPRESSION   ?: '5'
+                    // Sites come from global env (rarely change); fall back to placeholders.
+                    env.SITE_JIRA       = env.SITE_JIRA       ?: 'https://<YOUR_SITE>.atlassian.net'
+                    env.SITE_CONFLUENCE = env.SITE_CONFLUENCE ?: 'https://<YOUR_SITE>.atlassian.net/wiki'
+                    // Run-time settings come from build parameters (whose defaults are
+                    // the global env vars set by jenkins-setup.groovy).
+                    env.STORAGE_PROVIDER      = params.STORAGE_PROVIDER
+                    env.STORAGE_DEST          = params.STORAGE_DEST
+                    env.S3_ENDPOINT_URL       = params.S3_ENDPOINT_URL
+                    env.NOTIFY_CHANNELS       = params.NOTIFY_CHANNELS
+                    env.PRODUCT_NAME_TEMPLATE = params.PRODUCT_NAME_TEMPLATE
+                    env.ARCHIVE_NAME_TEMPLATE = params.ARCHIVE_NAME_TEMPLATE
+                    env.ARCHIVE_COMPRESSION   = params.ARCHIVE_COMPRESSION
                     echo "Config: jira=${env.SITE_JIRA} storage=${env.STORAGE_PROVIDER}:" +
                          "${env.STORAGE_DEST} notify=${env.NOTIFY_CHANNELS ?: '(none)'}"
                     setupVenv()
@@ -130,27 +153,28 @@ pipeline {
         stage('Upload') {
             steps {
                 script {
-                    // Bind only the selected provider's credentials.
-                    if (env.STORAGE_PROVIDER == 'gcs') {
-                        withCredentials([file(credentialsId: 'gcp-backup-sa-key',
-                                              variable: 'GOOGLE_APPLICATION_CREDENTIALS')]) {
-                            runPy("-m backup.upload --provider gcs --dest \"${STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"")
-                        }
-                    } else if (env.STORAGE_PROVIDER == 's3') {
-                        withCredentials([
-                            string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID'),
-                            string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
-                        ]) {
-                            def extra = env.S3_ENDPOINT_URL?.trim() ? " --endpoint-url \"${S3_ENDPOINT_URL}\"" : ""
-                            runPy("-m backup.upload --provider s3 --dest \"${STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"${extra}")
-                        }
-                    } else if (env.STORAGE_PROVIDER == 'azure') {
-                        withCredentials([string(credentialsId: 'azure-storage-connection-string',
-                                                variable: 'AZURE_STORAGE_CONNECTION_STRING')]) {
-                            runPy("-m backup.upload --provider azure --dest \"${STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"")
-                        }
-                    } else {  // local
-                        runPy("-m backup.upload --provider local --dest \"${STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"")
+                    // STORAGE_PROVIDER may be a comma list -> bind the union of creds.
+                    def providers = (env.STORAGE_PROVIDER ?: '').split(',').collect { it.trim() }.findAll { it }
+                    def creds = []
+                    if (providers.contains('gcs')) {
+                        creds << file(credentialsId: 'gcp-backup-sa-key',
+                                      variable: 'GOOGLE_APPLICATION_CREDENTIALS')
+                    }
+                    if (providers.contains('s3')) {
+                        creds << string(credentialsId: 'aws-access-key-id',     variable: 'AWS_ACCESS_KEY_ID')
+                        creds << string(credentialsId: 'aws-secret-access-key', variable: 'AWS_SECRET_ACCESS_KEY')
+                    }
+                    if (providers.contains('azure')) {
+                        creds << string(credentialsId: 'azure-storage-connection-string',
+                                        variable: 'AZURE_STORAGE_CONNECTION_STRING')
+                    }
+                    def extra = env.S3_ENDPOINT_URL?.trim() ? " --endpoint-url \"${env.S3_ENDPOINT_URL}\"" : ""
+                    def cmd = "-m backup.upload --provider \"${env.STORAGE_PROVIDER}\" " +
+                              "--dest \"${env.STORAGE_DEST}\"${extra}"
+                    if (creds) {
+                        withCredentials(creds) { runPy(cmd) }
+                    } else {
+                        runPy(cmd)   // local only — no credentials needed
                     }
                 }
             }

@@ -116,19 +116,15 @@ def do_archive(cfg: config.Config, out_dir: Path, archive_dir: Path, *,
 
 def do_upload(cfg: config.Config, archive_dir: Path, *, dry_run: bool = False) -> None:
     ui.section(f"Upload ({cfg.storage_provider or 'not set'})")
-    if cfg.storage_provider not in upload.BACKENDS:
-        raise RuntimeError(f"STORAGE_PROVIDER '{cfg.storage_provider}' invalid — "
-                           f"choose one of: {', '.join(sorted(upload.BACKENDS))}")
+    targets = upload.parse_targets(cfg.storage_provider, cfg.storage_dest)  # validates 1:1
     if dry_run:
         n = len(list(archive_dir.glob("*.7z"))) if archive_dir.exists() else 0
-        ui.info(f"[DRY] would upload {n} archive(s) + manifest to "
-                f"{cfg.storage_provider}:{cfg.storage_dest}")
+        where = ", ".join(f"{p}:{d}" for p, d in targets)
+        ui.info(f"[DRY] would upload {n} archive(s) + manifest to {where}")
         return
-    if not cfg.storage_dest:
-        raise RuntimeError("STORAGE_DEST not set")
-    upload.run_upload(cfg.storage_provider, cfg.storage_dest, archive_dir,
-                      endpoint_url=cfg.s3_endpoint_url or None,
-                      region=cfg.aws_default_region or None)
+    upload.run_upload_multi(cfg.storage_provider, cfg.storage_dest, archive_dir,
+                            endpoint_url=cfg.s3_endpoint_url or None,
+                            region=cfg.aws_default_region or None)
 
 
 def do_notify(cfg: config.Config, status: str, archive_dir: Path,
@@ -173,10 +169,18 @@ def do_test(cfg: config.Config) -> bool:
     (ui.ok if ok_j else ui.error)(f"Jira: {msg_j}")
     ok_c, msg_c = confluence.test_connection(cfg.site_confluence, cfg.atl_email, cfg.atl_token)
     (ui.ok if ok_c else ui.error)(f"Confluence: {msg_c}")
-    ok_s, msg_s = upload.test_storage(cfg.storage_provider, cfg.storage_dest,
-                                      endpoint_url=cfg.s3_endpoint_url or None,
-                                      region=cfg.aws_default_region or None)
-    (ui.ok if ok_s else ui.error)(f"Storage ({cfg.storage_provider}): {msg_s}")
+    try:
+        targets = upload.parse_targets(cfg.storage_provider, cfg.storage_dest)
+    except RuntimeError as exc:
+        ui.error(f"Storage: {exc}")
+        return False
+    ok_s = True
+    for prov, dest in targets:
+        ok1, msg1 = upload.test_storage(prov, dest,
+                                        endpoint_url=cfg.s3_endpoint_url or None,
+                                        region=cfg.aws_default_region or None)
+        (ui.ok if ok1 else ui.error)(f"Storage ({prov}:{dest}): {msg1}")
+        ok_s = ok_s and ok1
     return ok_j and ok_c and ok_s
 
 
@@ -282,6 +286,9 @@ def do_configure(cfg: config.Config) -> None:
         "Per-product filename template", cfg.product_name_template or naming.DEFAULT_PRODUCT_TEMPLATE)
     cfg.archive_name_template = ui.prompt(
         "Archive (.7z) filename template", cfg.archive_name_template or naming.DEFAULT_ARCHIVE_TEMPLATE)
+    cfg.backup_cron = ui.prompt(
+        "Jenkins schedule (cron) — e.g. 'H 2 * * 4' = Thursday ~02:00",
+        cfg.backup_cron or "H 2 * * 4")
 
     # ── Storage ──
     ui.section("Storage")
