@@ -222,20 +222,37 @@ def poll_progress(site: str, cookies: dict, task_id: str,
     raise TimeoutError(f"Backup did not complete within {timeout_sec}s")
 
 
-def download_backup(site: str, cookies: dict, file_id: str, out_path: Path,
+def download_backup(site: str, cookies: dict, download_ref: str, out_path: Path,
                     show_progress: bool = False) -> int:
     """
-    GET /plugins/servlet/export/download/?fileId={fileId}
-    Streams to disk. Returns bytes written.
+    Stream the export to disk. `download_ref` is either:
+      - a full URL (modern Jira Cloud returns an api.media.atlassian.com URL whose
+        token is embedded — fetched directly, no cookies), or
+      - a fileId for the legacy `/plugins/servlet/export/download/?fileId=` servlet.
+    Returns bytes written.
     """
-    url = f"{site}/plugins/servlet/export/download/"
-    headers = {"User-Agent": USER_AGENT}
+    ref = str(download_ref)
+    if ref.startswith(("http://", "https://")):
+        url, req_kwargs = ref, {"headers": {"User-Agent": USER_AGENT}}
+    else:
+        url = f"{site}/plugins/servlet/export/download/"
+        req_kwargs = {"headers": {"User-Agent": USER_AGENT}, "cookies": cookies,
+                      "params": {"fileId": ref}}
 
     bytes_written = 0
-    with requests.get(url, headers=headers, cookies=cookies,
-                      params={"fileId": file_id}, stream=True,
-                      timeout=600) as resp:
-        resp.raise_for_status()
+    with requests.get(url, stream=True, timeout=600, **req_kwargs) as resp:
+        if resp.status_code >= 400:
+            snippet = ""
+            try:
+                snippet = " ".join((resp.text or "").split())[:300]
+            except Exception:  # noqa: BLE001
+                pass
+            raise RuntimeError(
+                f"Download failed: HTTP {resp.status_code} from {resp.url}\n"
+                f"  body: {snippet}\n"
+                f"  Modern Jira Cloud serves exports from api.media.atlassian.com; the "
+                f"download reference may need different handling. Capture the browser's "
+                f"'Copy as cURL' of a manual export download and share it so this can be fixed.")
         total = int(resp.headers.get("Content-Length") or 0) or None
 
         def _stream(update=None):
@@ -319,13 +336,17 @@ def run_backup(site: str, cookies: dict, out_dir: Path,
 
     ui.info(f"Polling progress (task {task_id})")
     final = poll_progress(site, cookies, str(task_id), timeout_sec=poll_timeout)
+    # The download field varies by instance/version — log the full response so the
+    # exact field can be confirmed if the download path needs adjusting.
+    print(f"[DEBUG] completion response: {final}")
 
-    file_id = final.get("result") or final.get("fileName")
-    if not file_id:
-        raise RuntimeError(f"No fileId in completion response: {final}")
+    download_ref = (final.get("downloadUrl") or final.get("mediaUrl")
+                    or final.get("result") or final.get("fileName"))
+    if not download_ref:
+        raise RuntimeError(f"No download reference in completion response: {final}")
 
     out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
-    size = download_backup(site, cookies, file_id, out_path, show_progress=True)
+    size = download_backup(site, cookies, download_ref, out_path, show_progress=True)
     ui.ok(f"Jira backup: {out_path} ({size / (1024 * 1024):.1f} MB)")
     return out_path
 

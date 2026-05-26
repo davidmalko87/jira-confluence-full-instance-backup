@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.5.1] - 2026-05-26
+
+### Fixed
+- **Jira export download on modern Atlassian Cloud** — the completion response can point at `api.media.atlassian.com` rather than the legacy `/plugins/servlet/export/download/` servlet. `download_backup` now fetches a full URL directly (token embedded, no cookies) and prefers an explicit `downloadUrl`/`mediaUrl` field; on failure it surfaces the HTTP status, final URL, and response body instead of an opaque error. The full completion response is logged for diagnosing instance-specific download fields.
+
+---
+
 ## [0.5.0] - 2026-05-26
 
 ### Added
@@ -86,6 +93,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.5.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.1
 [0.5.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.0
 [0.4.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.4.0
 [0.3.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.3.0
