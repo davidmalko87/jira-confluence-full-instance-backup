@@ -41,7 +41,8 @@ For per-project Jira backup/restore, see the sibling project [`jira-project-back
 | Feature | Description |
 |---|---|
 | **Full-instance backup** | Jira (all projects, attachments, avatars, logos) + Confluence (all spaces, attachments) in one run |
-| **Run anywhere** | Interactive **menu** for VMs/manual use **and** **CLI flags** for Jenkins/cron — same codebase |
+| **Run anywhere** | Interactive **menu** for VMs/manual use **and** **CLI flags** for Jenkins/cron — same codebase; the `Jenkinsfile` runs on **Linux and Windows** agents |
+| **One-paste Jenkins setup** | Export a Script Console script from your config that creates all credentials + the pipeline job — no manual credential forms |
 | **Pluggable storage** | **GCS · AWS S3 / S3-compatible (R2, B2, MinIO, Spaces) · Azure Blob · local** — pick one flag; only that SDK is needed |
 | **Pluggable notifications** | **Slack · Teams · Discord · Google Chat · email (SMTP) · generic webhook** — any combination, no extra deps |
 | **Optional encryption** | 7-Zip AES-256 with encrypted headers — on by default, switch off with `--no-encrypt` |
@@ -86,6 +87,12 @@ cp .env.example .env      # fill in real values — .env is gitignored
 ```
 
 Or use the guided menu (writes `.env` for you): `jira-confluence-backup` → **Configure credentials**.
+It explains every field — including how to obtain the Jira cookie blob — and validates what you paste.
+
+> **Hidden input is intentional.** When entering secrets (API token, cookie blob, passwords),
+> nothing is echoed to the screen — the prompt shows `[input hidden — paste, then Enter]`. Paste
+> and press Enter; the tool confirms back (e.g. *"captured 5 cookie(s); all required present"*) so
+> you know it registered, without ever displaying the value. Use **Test connections** to verify.
 
 ### 2. Run — interactive menu
 
@@ -105,6 +112,7 @@ jira-confluence-backup            # or: python main.py   /   python -m backup
   4) Full run            10) Configure credentials
   5) Archive ./out       11) Show configuration
   6) Upload ./archive    12) List local backups
+                         13) Export Jenkins setup
   0) Exit
 ```
 
@@ -193,7 +201,22 @@ Each successful run writes a `manifest.json` (timestamp, products, per-file + ar
 
 ## Jenkins
 
-The `Jenkinsfile` runs a weekly job (cron) and is driven by environment variables:
+The `Jenkinsfile` is **cross-platform** — it runs on both Linux (`sh`) and Windows (`powershell`) agents. The agent needs **Python 3.10+** and **7-Zip** (`apt install p7zip-full`, or install 7-Zip on Windows). It runs weekly (`cron('H 2 * * 4')`) and installs only the selected provider's SDK.
+
+> 📖 **Full step-by-step guide (prerequisites, plugins, every credential, troubleshooting): [docs/JENKINS_SETUP.md](docs/JENKINS_SETUP.md).** The summary below is the quick version.
+
+### Fast setup — one paste (recommended)
+
+1. Configure locally: `python main.py` → **Configure credentials** (writes `.env`).
+2. Generate the setup script: `python main.py` → **Export Jenkins setup** (or `python main.py --export-jenkins`). This writes a gitignored `jenkins-setup.groovy`.
+3. In Jenkins: **Manage Jenkins → Script Console**, paste the file's contents, **Run**. It creates every credential (with the exact IDs) **and** the `atlassian-full-backup` pipeline job pointing at this repo.
+4. Open the job → **Build Now**, then **delete `jenkins-setup.groovy`** (it contains secrets).
+
+> The job uses *Pipeline script from SCM*, so Jenkins reads the `Jenkinsfile` straight from the repo at build time — there is no Jenkinsfile to generate or maintain inside Jenkins, and updates flow automatically from the repo.
+
+### Manual setup
+
+Edit the `Jenkinsfile` `environment` block for your site / provider / channels:
 
 ```groovy
 environment {
@@ -201,11 +224,24 @@ environment {
     SITE_CONFLUENCE  = 'https://<YOUR_SITE>.atlassian.net/wiki'
     STORAGE_PROVIDER = 'gcs'            // gcs | s3 | azure | local
     STORAGE_DEST     = '<YOUR_BUCKET>'
-    NOTIFY_CHANNELS  = 'slack'         // any comma list
+    NOTIFY_CHANNELS  = 'slack'          // any comma list
 }
 ```
 
-It installs the matching provider SDK and binds **only** the credentials your config needs from the Jenkins Credentials store (`jira-cookies`, `atlassian-email`/`atlassian-api-token`, `archive-password`, the storage credential, and `notify-webhook-url` / `smtp-*`). No secrets live in the repo.
+Create a **Pipeline** job → *Pipeline script from SCM* → Git → this repo → `*/master` → Script Path `Jenkinsfile`, and add the credentials below (IDs **must match exactly** — the pipeline binds only the ones your config needs):
+
+| Credential ID | Kind | Used when |
+|---|---|---|
+| `jira-cookies` | Secret text | always (Jira) |
+| `atlassian-email`, `atlassian-api-token` | Secret text | always (Confluence) |
+| `archive-password` | Secret text | always (may be blank = unencrypted) |
+| `gcp-backup-sa-key` | Secret file | `STORAGE_PROVIDER=gcs` |
+| `aws-access-key-id`, `aws-secret-access-key` | Secret text | `STORAGE_PROVIDER=s3` |
+| `azure-storage-connection-string` | Secret text | `STORAGE_PROVIDER=azure` |
+| `notify-webhook-url` | Secret text | chat/webhook channels |
+| `smtp-host/from/to/user/password` | Secret text | `email` channel |
+
+No secrets live in the repo — they stay in the Jenkins Credentials store.
 
 ---
 
@@ -215,8 +251,10 @@ The Jira `tenant.session.token` JWT expires roughly every 30 days. When it does,
 
 1. Log into Atlassian as the backup admin account.
 2. Open `https://<your-site>.atlassian.net/secure/admin/CloudExport.jspa`.
-3. **F12 → Application → Cookies** and copy these five: `tenant.session.token`, `atlassian.xsrf.token`, `JSESSIONID`, `AWSALB`, `AWSALBCORS`.
-4. Assemble as one semicolon-separated string and update it where it's stored (`JIRA_COOKIES` in `.env`, or the `jira-cookies` Jenkins credential).
+3. **F12 → Network**, reload the page, right-click the `CloudExport.jspa` request (or any `/rest/backup/1/export/...` request) → **Copy → Copy as cURL**.
+4. Paste the whole cURL into the menu's **Configure credentials** (it extracts the cookies), or into the `jira-cookies` Jenkins credential / `JIRA_COOKIES` in `.env`.
+
+The cookie blob must contain at least `tenant.session.token` and `atlassian.xsrf.token`. Other cookies such as `JSESSIONID` / `AWSALB` / `AWSALBCORS` are load-balancer/servlet cookies that some instances set and others don't — they're forwarded automatically when present, and not required. Using a real request's "Copy as cURL" (rather than the Application→Cookies list) ensures any that *are* needed come along.
 
 `Test connections` warns you in advance when the token is within a few days of expiry.
 
@@ -264,6 +302,7 @@ jira-confluence-full-instance-backup/
 ├── .env.example              # Local-testing template (real .env is gitignored)
 ├── requirements.txt          # Core (requests)
 ├── requirements-{gcs,s3,azure,ui}.txt   # Optional extras
+├── docs/JENKINS_SETUP.md     # Full Jenkins setup guide
 └── backup/
     ├── cli.py                # Dual-mode entrypoint (menu + CLI)
     ├── jira.py               # Cookie-authenticated Jira backup
@@ -273,6 +312,7 @@ jira-confluence-full-instance-backup/
     ├── notify.py             # Multi-channel notifier
     ├── manifest.py           # manifest.json: completeness + sha256 integrity
     ├── config.py             # Env/.env config + Configure-menu persistence
+    ├── jenkins_export.py     # Generate Script Console Groovy (creds + job)
     ├── naming.py             # Filename templating
     └── ui.py                 # Console UI (rich-optional, ASCII-safe)
 ```

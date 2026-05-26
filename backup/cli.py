@@ -24,8 +24,8 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import (archive, config, confluence, jira, manifest, naming,
-               notify, ui, upload)
+from . import (archive, config, confluence, jenkins_export, jira, manifest,
+               naming, notify, ui, upload)
 
 DEFAULT_OUT = Path("out")
 DEFAULT_ARCHIVE = Path("archive")
@@ -173,12 +173,29 @@ def do_test(cfg: config.Config) -> bool:
     (ui.ok if ok_j else ui.error)(f"Jira: {msg_j}")
     ok_c, msg_c = confluence.test_connection(cfg.site_confluence, cfg.atl_email, cfg.atl_token)
     (ui.ok if ok_c else ui.error)(f"Confluence: {msg_c}")
-    return ok_j and ok_c
+    ok_s, msg_s = upload.test_storage(cfg.storage_provider, cfg.storage_dest,
+                                      endpoint_url=cfg.s3_endpoint_url or None,
+                                      region=cfg.aws_default_region or None)
+    (ui.ok if ok_s else ui.error)(f"Storage ({cfg.storage_provider}): {msg_s}")
+    return ok_j and ok_c and ok_s
 
 
 def do_show(cfg: config.Config) -> None:
     ui.section("Configuration")
     ui.table("Current config (secrets masked)", config.display_rows(cfg))
+
+
+def do_export_jenkins(cfg: config.Config, out: Path = Path("jenkins-setup.groovy")) -> None:
+    ui.section("Export Jenkins setup")
+    path, summary = jenkins_export.write(cfg, out)
+    ui.ok(f"Wrote {path}")
+    ui.info("It will create:")
+    for item in summary:
+        ui.info(f"  - {item}")
+    ui.info("Next: open Jenkins -> Manage Jenkins -> Script Console, paste the file's")
+    ui.info("contents, and click Run. It creates the credentials + the pipeline job.")
+    ui.warn("This file contains your real secrets (base64) — it is gitignored; "
+            "delete it after importing.")
 
 
 def do_list(out_dir: Path, archive_dir: Path) -> None:
@@ -223,27 +240,37 @@ def do_configure(cfg: config.Config) -> None:
     cfg.atl_token = ui.prompt("Atlassian API token (for Confluence)",
                               _pref(cfg.atl_token), secret=True)
 
-    # ── Jira cookie blob — with how-to and validation feedback ──
+    # ── Jira cookie blob — paste a cURL (auto-extracted) with retry ──
     ui.section("Jira session cookies")
-    ui.info("Jira's backup endpoint is UI-gated, so it needs your browser session")
-    ui.info("cookies (a one-line 'name=value; name=value; ...' blob). To get it:")
+    ui.info("Jira's backup endpoint is UI-gated — it needs your logged-in session")
+    ui.info("cookies (at minimum: tenant.session.token and atlassian.xsrf.token).")
+    ui.info("Easiest way to grab them:")
     ui.info("  1. Log in, open  <your-site>/secure/admin/CloudExport.jspa")
-    ui.info("  2. F12 -> Application -> Cookies; copy these 5 values:")
-    ui.info("     tenant.session.token, atlassian.xsrf.token, JSESSIONID, AWSALB, AWSALBCORS")
-    ui.info("  3. Join them as:  name=value; name2=value2; ...")
-    ui.info("  Tip: DevTools -> Network -> right-click a request -> Copy as cURL,")
-    ui.info("  then paste the text after  -b  (that's the cookie blob).")
-    blob = ui.prompt("Jira cookie blob", _pref(cfg.jira_cookies), secret=True)
-    if blob:
-        cfg.jira_cookies = blob
+    ui.info("  2. F12 -> Network tab, reload (Ctrl+R), click the 'CloudExport.jspa'")
+    ui.info("     request (or a /rest/backup/1/export/... one)")
+    ui.info("  3. Right-click -> Copy -> Copy as cURL (bash), and paste it ALL below")
+    ui.info("Cookies are auto-extracted; a plain 'name=value; ...' blob also works.")
+    while True:
+        raw = ui.prompt("Paste cURL or cookie blob", _pref(cfg.jira_cookies), secret=True)
+        if not raw:
+            break  # keep current value, skip
+        blob = jira.extract_cookie_blob(raw)
         cks = jira.cookies_from_blob(blob)
         missing = jira.missing_cookies(cks)
-        if missing:
-            ui.warn(f"captured {len(cks)} cookie(s), but MISSING required: {missing}")
-        else:
+        cfg.jira_cookies = blob
+        if not missing:
             days = jira.session_token_days_left(cks)
             extra = f"; session token ~{days:.0f} days left" if days is not None else ""
-            ui.ok(f"captured {len(cks)} cookie(s); all required present{extra}")
+            ui.ok(f"captured {len(cks)} cookie(s); required present{extra}")
+            break
+        # Safe to show cookie NAMES (not values) so the user sees what came through.
+        ui.warn(f"MISSING required cookie(s): {missing}")
+        ui.info(f"got {len(cks)}: {', '.join(sorted(cks)) or '(none — paste did not register)'}")
+        ui.info("Copy as cURL from a logged-in request — the blob must include")
+        ui.info("tenant.session.token and atlassian.xsrf.token.")
+        if not ui.confirm("Try pasting again?", default=True):
+            ui.warn("Saved an incomplete cookie set — the Jira stage will fail until fixed.")
+            break
 
     # ── Archive ──
     ui.section("Archive")
@@ -264,10 +291,16 @@ def do_configure(cfg: config.Config) -> None:
     ui.info("  azure - Azure Blob Storage")
     cfg.storage_provider = (ui.prompt("Storage provider [local/gcs/s3/azure]",
                                       cfg.storage_provider or "local") or "local").lower()
-    dest_hint = {"local": "folder path, e.g. ./backups or /mnt/backups",
-                 "gcs": "bucket name", "s3": "bucket name",
-                 "azure": "container name"}.get(cfg.storage_provider, "bucket/container/folder")
-    cfg.storage_dest = ui.prompt(f"Storage destination ({dest_hint})", _pref(cfg.storage_dest))
+    dest_hint = {
+        "local": "a folder on this machine (created if missing) — e.g. ./backups or D:\\backups",
+        "gcs":   "the GCS bucket NAME you created (no gs:// prefix) — e.g. acme-atlassian-backups",
+        "s3":    "the S3 bucket NAME you created — e.g. acme-atlassian-backups",
+        "azure": "the Blob container NAME you created — e.g. atlassian-backups",
+    }.get(cfg.storage_provider, "bucket / container / folder")
+    if cfg.storage_provider != "local":
+        ui.info("The bucket/container must already exist — this tool uploads into it, "
+                "it does not create it. Enter just the name, not a URL.")
+    cfg.storage_dest = ui.prompt(f"Storage destination = {dest_hint}", _pref(cfg.storage_dest))
     if cfg.storage_provider == "gcs":
         cfg.gcp_credentials = ui.prompt("Path to GCP service-account JSON key",
                                         _pref(cfg.gcp_credentials) or "./sa-key.json")
@@ -368,6 +401,7 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
         print("  4) Full run            10) Configure credentials")
         print("  5) Archive ./out       11) Show configuration")
         print("  6) Upload ./archive    12) List local backups")
+        print("                         13) Export Jenkins setup")
         print("  0) Exit")
         choice = ui.prompt("Select").strip()
 
@@ -395,6 +429,8 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
             _safe(do_show, cfg)
         elif choice == "12":
             _safe(do_list, out_dir, archive_dir)
+        elif choice == "13":
+            _safe(do_export_jenkins, cfg)
         elif choice in ("0", "q", "exit", "quit"):
             return
         else:
@@ -429,6 +465,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--test-connection", action="store_true", help="Test Jira+Confluence auth")
     p.add_argument("--show-config", action="store_true", help="Print config (secrets masked)")
     p.add_argument("--configure", action="store_true", help="Guided .env setup")
+    p.add_argument("--export-jenkins", action="store_true",
+                   help="Write jenkins-setup.groovy (Script Console: creates creds + job)")
     p.add_argument("--out", type=Path, default=DEFAULT_OUT, help="Backup download dir")
     p.add_argument("--archive-dir", type=Path, default=DEFAULT_ARCHIVE, help="Archive dir")
     p.add_argument("--build-url", default="", help="Build URL for notifications")
@@ -444,13 +482,16 @@ def main(argv: list[str] | None = None) -> int:
 
     actionable = (args.backup or args.archive or args.upload or args.notify or
                   args.all or args.validate or args.cleanup or args.test_connection or
-                  args.show_config or args.configure)
+                  args.show_config or args.configure or args.export_jenkins)
     if not actionable:
         menu(cfg, args.out, args.archive_dir)        # interactive
         return 0
 
     if args.configure:
         do_configure(cfg)
+        return 0
+    if args.export_jenkins:
+        do_export_jenkins(cfg)
         return 0
     if args.show_config:
         do_show(cfg)

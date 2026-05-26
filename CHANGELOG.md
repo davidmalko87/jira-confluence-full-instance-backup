@@ -6,6 +6,26 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.2.0] - 2026-05-26
+
+### Added
+- **Cross-platform `Jenkinsfile`** — runs on Linux (`sh`) and Windows (`powershell`) agents automatically.
+- **Export Jenkins setup** (`--export-jenkins` / menu option 13) — generates a Script Console Groovy script from your `.env` that creates all credentials, sets the non-secret config as Jenkins global env vars, and creates the pipeline job in one paste.
+- **Storage connection test** in *Test connections* — verifies the chosen backend (gcs/s3/azure/local) is reachable and writable.
+- `docs/JENKINS_SETUP.md` — full step-by-step Jenkins setup guide.
+- Cookie entry accepts a full **"Copy as cURL"** paste (auto-extracted) with a retry loop and name-level validation feedback.
+
+### Changed
+- Jira requests now use browser-like headers (Windows UA, `sec-fetch-*`, no `Origin`/`Content-Type` on GET) to satisfy Atlassian's UI-only gate; *Test connections* treats HTTP 204 (no prior backup task) as success and surfaces the response body on 403.
+- **Required Jira cookies relaxed** to `tenant.session.token` + `atlassian.xsrf.token`; `JSESSIONID` / `AWSALB` / `AWSALBCORS` are forwarded when present but no longer required (not all instances set them).
+- Jenkins non-secret config (site, provider, destination, channels, templates, compression) is read from Jenkins global env vars, set by the export — no need to edit the shared `Jenkinsfile`.
+- Muted, lower-contrast console colors; secret prompts note that input is hidden.
+
+### Fixed
+- Clear error when an unset or invalid storage provider is selected.
+
+---
+
 ## [0.1.1] - 2026-05-26
 
 ### Changed
@@ -34,5 +54,6 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.2.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.2.0
 [0.1.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.1.1
 [0.1.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.1.0

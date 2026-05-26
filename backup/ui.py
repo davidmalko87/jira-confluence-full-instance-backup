@@ -36,30 +36,39 @@ except ImportError:                                # pragma: no cover - env depe
     HAVE_RICH = RICH_UNICODE = False
 
 
+# Muted, low-contrast palette (kept readable; avoids the loud bright defaults).
+_C_RULE = "grey50"
+_C_TITLE = "steel_blue"
+_C_INFO = "grey62"
+_C_OK = "sea_green3"
+_C_WARN = "gold3"
+_C_ERR = "indian_red"
+
+
 def section(title: str) -> None:
     if RICH_UNICODE:
-        _con.rule(f"[bold cyan]{title}")
+        _con.rule(f"[{_C_TITLE}]{title}[/]", style=_C_RULE)
     elif HAVE_RICH:
-        _con.print(f"[bold cyan]== {title} ==[/]")
+        _con.print(f"[{_C_TITLE}]-- {title} --[/]")
     else:
         print(f"\n=== {title} ===")
 
 
 def info(msg: str) -> None:
-    _con.print(f"[cyan][INFO][/] {msg}") if HAVE_RICH else print(f"[INFO] {msg}")
+    _con.print(f"[{_C_INFO}][INFO][/] {msg}") if HAVE_RICH else print(f"[INFO] {msg}")
 
 
 def ok(msg: str) -> None:
-    _con.print(f"[green][OK][/] {msg}") if HAVE_RICH else print(f"[OK] {msg}")
+    _con.print(f"[{_C_OK}][OK][/] {msg}") if HAVE_RICH else print(f"[OK] {msg}")
 
 
 def warn(msg: str) -> None:
-    _err.print(f"[yellow][WARN][/] {msg}") if HAVE_RICH \
+    _err.print(f"[{_C_WARN}][WARN][/] {msg}") if HAVE_RICH \
         else print(f"[WARN] {msg}", file=sys.stderr)
 
 
 def error(msg: str) -> None:
-    _err.print(f"[red][ERROR][/] {msg}") if HAVE_RICH \
+    _err.print(f"[{_C_ERR}][ERROR][/] {msg}") if HAVE_RICH \
         else print(f"[ERROR] {msg}", file=sys.stderr)
 
 
