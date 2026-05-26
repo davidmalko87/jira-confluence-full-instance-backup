@@ -314,20 +314,82 @@ def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
     return False, f"Unexpected HTTP {resp.status_code}{note} — body: {body}"
 
 
+def _download_from_task(site: str, cookies: dict, final: dict, out_dir: Path,
+                        name_template: str, label: str) -> Path:
+    """Resolve the download reference from a completed task response and stream it."""
+    download_ref = (final.get("downloadUrl") or final.get("mediaUrl")
+                    or final.get("result") or final.get("fileName"))
+    if not download_ref:
+        raise RuntimeError(f"No download reference in completion response: {final}")
+    out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
+    size = download_backup(site, cookies, download_ref, out_path, show_progress=True)
+    ui.ok(f"Jira backup{label}: {out_path} ({size / (1024 * 1024):.1f} MB)")
+    return out_path
+
+
+def fetch_existing_backup(site: str, cookies: dict, out_dir: Path,
+                          name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
+                          poll_timeout: int = 21600) -> Path | None:
+    """
+    Download the most recent COMPLETED Jira backup WITHOUT triggering a new one.
+
+    Used on cooldown (a fresh backup is blocked for 48h, but the previous one is
+    usually still downloadable) and for reruns that just need to ship an existing
+    backup. Returns the .zip path, or None when there is nothing to download.
+    """
+    task_id = get_last_task_id(site, cookies)
+    if not task_id:
+        ui.warn("No previous Jira backup task found — nothing to download")
+        return None
+    ui.info(f"Fetching most recent existing Jira backup (task {task_id})")
+    try:
+        final = poll_progress(site, cookies, str(task_id), timeout_sec=poll_timeout)
+    except TimeoutError:
+        ui.warn("Existing Jira backup task is still in progress — try again later")
+        return None
+    try:
+        return _download_from_task(site, cookies, final, out_dir, name_template, " (existing)")
+    except RuntimeError as exc:
+        ui.warn(f"Existing Jira backup could not be downloaded (likely expired): {exc}")
+        return None
+
+
 def run_backup(site: str, cookies: dict, out_dir: Path,
                name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
-               poll_timeout: int = 21600) -> Path | None:
-    """Full trigger→poll→download flow. Returns the .zip path, or None on cooldown."""
+               poll_timeout: int = 21600,
+               download_existing: bool = False) -> Path | None:
+    """
+    Full trigger→poll→download flow. Returns the .zip path, or None when there is
+    nothing to download (cooldown with no prior backup).
+
+    On 48h cooldown a NEW backup is blocked, so we fall back to downloading the
+    most recent EXISTING backup — that way a (re)run still ships a Jira archive
+    and the pipeline can continue. `download_existing=True` skips the trigger
+    entirely and only fetches the latest existing backup.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    if download_existing:
+        ui.info(f"Fetching existing Jira backup on {site} (no new trigger)")
+        return fetch_existing_backup(site, cookies, out_dir,
+                                     name_template=name_template,
+                                     poll_timeout=poll_timeout)
 
     ui.info(f"Triggering Jira backup on {site}")
     trigger_result = trigger_backup(site, cookies)
 
     if trigger_result is None:
-        marker = out_dir / "jira_cooldown.txt"
-        marker.write_text(f"Cooldown active at {datetime.now(timezone.utc).isoformat()}\n")
-        ui.warn("Jira backup skipped — 48h cooldown still active")
-        return None
+        ui.warn("Jira backup on 48h cooldown — falling back to the most recent existing backup")
+        existing = fetch_existing_backup(site, cookies, out_dir,
+                                         name_template=name_template,
+                                         poll_timeout=poll_timeout)
+        if existing is None:
+            marker = out_dir / "jira_cooldown.txt"
+            marker.write_text(
+                f"Cooldown active at {datetime.now(timezone.utc).isoformat()}; "
+                f"no existing backup available to download\n")
+            ui.warn("Cooldown active and no existing backup to download — Jira skipped")
+        return existing
 
     # Extract task ID — field name varies across endpoint versions.
     task_id = (trigger_result.get("taskId") or
@@ -345,15 +407,7 @@ def run_backup(site: str, cookies: dict, out_dir: Path,
     # exact field can be confirmed if the download path needs adjusting.
     print(f"[DEBUG] completion response: {final}")
 
-    download_ref = (final.get("downloadUrl") or final.get("mediaUrl")
-                    or final.get("result") or final.get("fileName"))
-    if not download_ref:
-        raise RuntimeError(f"No download reference in completion response: {final}")
-
-    out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
-    size = download_backup(site, cookies, download_ref, out_path, show_progress=True)
-    ui.ok(f"Jira backup: {out_path} ({size / (1024 * 1024):.1f} MB)")
-    return out_path
+    return _download_from_task(site, cookies, final, out_dir, name_template, "")
 
 
 def main():
@@ -372,6 +426,12 @@ def main():
                                                naming.DEFAULT_PRODUCT_TEMPLATE),
                         help="Filename template (tokens: {product}{site}{date}"
                              "{time}{datetime}{timestamp})")
+    parser.add_argument("--download-existing", action="store_true",
+                        default=os.environ.get("JIRA_DOWNLOAD_EXISTING", "").lower()
+                        in ("1", "true", "yes"),
+                        help="Skip triggering a new backup; download the most recent "
+                             "existing Jira backup (useful on cooldown / reruns). "
+                             "Env: JIRA_DOWNLOAD_EXISTING=true")
     args = parser.parse_args()
 
     cookie_blob = os.environ.get("JIRA_COOKIES")
@@ -381,7 +441,8 @@ def main():
     cookies = parse_cookie_blob(cookie_blob)
     try:
         run_backup(args.site, cookies, args.out,
-                   name_template=args.name_template, poll_timeout=args.poll_timeout)
+                   name_template=args.name_template, poll_timeout=args.poll_timeout,
+                   download_existing=args.download_existing)
     except (RuntimeError, ValueError) as exc:
         sys.exit(str(exc))
 

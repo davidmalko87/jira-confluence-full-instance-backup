@@ -107,8 +107,14 @@ def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
                 ui.error(f"Jira cookies missing/invalid: {missing or 'JIRA_COOKIES not set'}")
                 errors.append("jira")
             else:
-                jira.run_backup(cfg.site_jira, cookies, out_dir,
-                                name_template=cfg.product_name_template)
+                # Isolate Jira from Confluence: a failure here must not skip the
+                # Confluence backup (mirrors the independent Jenkins stages).
+                try:
+                    jira.run_backup(cfg.site_jira, cookies, out_dir,
+                                    name_template=cfg.product_name_template)
+                except (Exception, SystemExit) as exc:  # noqa: BLE001
+                    ui.error(f"Jira backup failed: {exc}")
+                    errors.append("jira")
 
     if "confluence" in products:
         ui.section("Confluence backup")
@@ -120,8 +126,12 @@ def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
             ui.error("ATL_EMAIL / ATL_TOKEN not set")
             errors.append("confluence")
         else:
-            confluence.run_backup(cfg.site_confluence, cfg.atl_email, cfg.atl_token,
-                                  out_dir, name_template=cfg.product_name_template)
+            try:
+                confluence.run_backup(cfg.site_confluence, cfg.atl_email, cfg.atl_token,
+                                      out_dir, name_template=cfg.product_name_template)
+            except (Exception, SystemExit) as exc:  # noqa: BLE001
+                ui.error(f"Confluence backup failed: {exc}")
+                errors.append("confluence")
     return errors
 
 
