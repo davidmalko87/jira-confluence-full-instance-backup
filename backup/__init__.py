@@ -5,4 +5,4 @@ Backs up to pluggable cloud storage (GCS / S3 / Azure / local). Modules run as
 archive, upload, notify); the dual-mode CLI/menu is ``backup.cli`` (also the
 ``jira-confluence-backup`` console script and ``python -m backup``).
 """
-__version__ = "0.4.0"
+__version__ = "0.5.0"

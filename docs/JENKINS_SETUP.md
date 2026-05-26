@@ -206,8 +206,10 @@ New Item → name `atlassian-full-backup` → **Pipeline** → OK. On the config
 
 ## 5. First build & smoke test
 
-Open the job → **Build Now** → click the build → **Console Output**. Stages run
-top to bottom: Setup → Jira → Confluence → Archive → Upload → Notify.
+Open the job → **Build Now**. Each step is a separate stage you can watch in the
+**Stage View** on the job page: Setup → Jira backup → Confluence backup → Archive
+→ Upload → Notify. For a live graphical per-stage view, install the **Blue Ocean**
+plugin (Manage Jenkins → Plugins). Click a build → **Console Output** for details.
 
 | Outcome | Meaning |
 |---|---|
@@ -245,12 +247,18 @@ uploads to each. The export creates the credentials for every listed provider.
 
 ## 7. Operations
 
-### Cookie refresh
+### Cookie refresh (monthly)
 
-The `tenant.session.token` JWT expires ~30 days. When it does, the Jira stage
-exits code 2. Re-do [Getting the Jira cookie blob](#getting-the-jira-cookie-blob)
-and update the `jira-cookies` credential (Manage Credentials → `jira-cookies` →
-Update). `Test connections` warns when the token is within a few days of expiry.
+The `tenant.session.token` JWT expires ~30 days. You'll be reminded *before* it
+fails: every notification warns when the cookie is within 7 days of expiry.
+
+Fastest refresh (validated):
+
+1. `python main.py` → **Refresh Jira cookies** (or `python main.py --refresh-cookies`).
+2. Paste a fresh **Copy as cURL** (see [Getting the Jira cookie blob](#getting-the-jira-cookie-blob)). It's validated (and optionally live-tested) and saved to `.env`.
+3. It writes `update-jira-cookies.groovy` — paste it into **Manage Jenkins → Script Console → Run** to update only the `jira-cookies` credential. Delete the file afterward.
+
+Or update it by hand: Manage Jenkins → Credentials → `jira-cookies` → Update.
 
 ### Credential ↔ stage map
 

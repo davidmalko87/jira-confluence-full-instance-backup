@@ -42,8 +42,9 @@ sa-key*.json
 *-key.json
 *_key.json
 
-# Generated Jenkins Script Console setup — contains real secrets
+# Generated Jenkins Script Console scripts — contain real secrets
 jenkins-setup.groovy
+update-jira-cookies.groovy
 
 # Jira UI session cookie blobs — the critical Jira secret
 cookies.txt

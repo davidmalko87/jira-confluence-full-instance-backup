@@ -51,6 +51,40 @@ def _normalize_site(url: str) -> str:
     return url
 
 
+def _prompt_jira_cookies(cfg: config.Config) -> None:
+    """Prompt for the Jira cookie blob (cURL auto-extracted), validate, retry."""
+    ui.section("Jira session cookies")
+    ui.info("Jira's backup endpoint is UI-gated — it needs your logged-in session")
+    ui.info("cookies (at minimum: tenant.session.token and atlassian.xsrf.token).")
+    ui.info("Easiest way to grab them:")
+    ui.info("  1. Log in, open  <your-site>/secure/admin/CloudExport.jspa")
+    ui.info("  2. F12 -> Network tab, reload (Ctrl+R), click the 'CloudExport.jspa'")
+    ui.info("     request (or a /rest/backup/1/export/... one)")
+    ui.info("  3. Right-click -> Copy -> Copy as cURL (bash), and paste it ALL below")
+    ui.info("Cookies are auto-extracted; a plain 'name=value; ...' blob also works.")
+    while True:
+        raw = ui.prompt("Paste cURL or cookie blob", _pref(cfg.jira_cookies), secret=True)
+        if not raw:
+            break  # keep current value, skip
+        blob = jira.extract_cookie_blob(raw)
+        cks = jira.cookies_from_blob(blob)
+        missing = jira.missing_cookies(cks)
+        cfg.jira_cookies = blob
+        if not missing:
+            days = jira.session_token_days_left(cks)
+            extra = f"; session token ~{days:.0f} days left" if days is not None else ""
+            ui.ok(f"captured {len(cks)} cookie(s); required present{extra}")
+            break
+        # Safe to show cookie NAMES (not values) so the user sees what came through.
+        ui.warn(f"MISSING required cookie(s): {missing}")
+        ui.info(f"got {len(cks)}: {', '.join(sorted(cks)) or '(none — paste did not register)'}")
+        ui.info("Copy as cURL from a logged-in request — the blob must include")
+        ui.info("tenant.session.token and atlassian.xsrf.token.")
+        if not ui.confirm("Try pasting again?", default=True):
+            ui.warn("Saved an incomplete cookie set — the Jira stage will fail until fixed.")
+            break
+
+
 # ─────────────────────────── orchestration steps ───────────────────────────
 
 def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
@@ -202,6 +236,33 @@ def do_export_jenkins(cfg: config.Config, out: Path = Path("jenkins-setup.groovy
             "delete it after importing.")
 
 
+def do_refresh_cookies(cfg: config.Config,
+                       out: Path = Path("update-jira-cookies.groovy")) -> None:
+    """Monthly refresh: paste a fresh cURL, validate it, save .env, and write a
+    one-credential Groovy that updates just jira-cookies in Jenkins."""
+    ui.section("Refresh Jira cookies")
+    _prompt_jira_cookies(cfg)
+    if not cfg.jira_cookies:
+        ui.warn("No cookies entered — nothing to do.")
+        return
+
+    if cfg.site_jira and ui.confirm("Test the new cookies against Jira now?", default=True):
+        ok, msg = jira.test_connection(cfg.site_jira, cfg.jira_cookies)
+        (ui.ok if ok else ui.error)(f"Jira: {msg}")
+        if not ok and not ui.confirm("Test failed — save and export anyway?", default=False):
+            ui.warn("Aborted; cookies not saved.")
+            return
+
+    if ui.confirm("Save updated cookies to .env?", default=True):
+        config.save_env(cfg)
+        ui.ok("Updated .env")
+
+    path = jenkins_export.write_cookie_update(cfg, out)
+    ui.ok(f"Wrote {path}")
+    ui.info("Paste it into Jenkins → Manage Jenkins → Script Console → Run to update")
+    ui.info("the 'jira-cookies' credential in place. Then delete the file (it holds the cookie).")
+
+
 def do_list(out_dir: Path, archive_dir: Path) -> None:
     ui.section("Local backups")
     man = manifest.read(archive_dir)
@@ -244,37 +305,7 @@ def do_configure(cfg: config.Config) -> None:
     cfg.atl_token = ui.prompt("Atlassian API token (for Confluence)",
                               _pref(cfg.atl_token), secret=True)
 
-    # ── Jira cookie blob — paste a cURL (auto-extracted) with retry ──
-    ui.section("Jira session cookies")
-    ui.info("Jira's backup endpoint is UI-gated — it needs your logged-in session")
-    ui.info("cookies (at minimum: tenant.session.token and atlassian.xsrf.token).")
-    ui.info("Easiest way to grab them:")
-    ui.info("  1. Log in, open  <your-site>/secure/admin/CloudExport.jspa")
-    ui.info("  2. F12 -> Network tab, reload (Ctrl+R), click the 'CloudExport.jspa'")
-    ui.info("     request (or a /rest/backup/1/export/... one)")
-    ui.info("  3. Right-click -> Copy -> Copy as cURL (bash), and paste it ALL below")
-    ui.info("Cookies are auto-extracted; a plain 'name=value; ...' blob also works.")
-    while True:
-        raw = ui.prompt("Paste cURL or cookie blob", _pref(cfg.jira_cookies), secret=True)
-        if not raw:
-            break  # keep current value, skip
-        blob = jira.extract_cookie_blob(raw)
-        cks = jira.cookies_from_blob(blob)
-        missing = jira.missing_cookies(cks)
-        cfg.jira_cookies = blob
-        if not missing:
-            days = jira.session_token_days_left(cks)
-            extra = f"; session token ~{days:.0f} days left" if days is not None else ""
-            ui.ok(f"captured {len(cks)} cookie(s); required present{extra}")
-            break
-        # Safe to show cookie NAMES (not values) so the user sees what came through.
-        ui.warn(f"MISSING required cookie(s): {missing}")
-        ui.info(f"got {len(cks)}: {', '.join(sorted(cks)) or '(none — paste did not register)'}")
-        ui.info("Copy as cURL from a logged-in request — the blob must include")
-        ui.info("tenant.session.token and atlassian.xsrf.token.")
-        if not ui.confirm("Try pasting again?", default=True):
-            ui.warn("Saved an incomplete cookie set — the Jira stage will fail until fixed.")
-            break
+    _prompt_jira_cookies(cfg)
 
     # ── Archive ──
     ui.section("Archive")
@@ -413,6 +444,7 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
         print("  5) Archive ./out       11) Show configuration")
         print("  6) Upload ./archive    12) List local backups")
         print("                         13) Export Jenkins setup")
+        print("                         14) Refresh Jira cookies")
         print("  0) Exit")
         choice = ui.prompt("Select").strip()
 
@@ -442,6 +474,8 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
             _safe(do_list, out_dir, archive_dir)
         elif choice == "13":
             _safe(do_export_jenkins, cfg)
+        elif choice == "14":
+            _safe(do_refresh_cookies, cfg)
         elif choice in ("0", "q", "exit", "quit"):
             return
         else:
@@ -478,6 +512,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--configure", action="store_true", help="Guided .env setup")
     p.add_argument("--export-jenkins", action="store_true",
                    help="Write jenkins-setup.groovy (Script Console: creates creds + job)")
+    p.add_argument("--refresh-cookies", action="store_true",
+                   help="Refresh Jira cookies + write update-jira-cookies.groovy")
     p.add_argument("--out", type=Path, default=DEFAULT_OUT, help="Backup download dir")
     p.add_argument("--archive-dir", type=Path, default=DEFAULT_ARCHIVE, help="Archive dir")
     p.add_argument("--build-url", default="", help="Build URL for notifications")
@@ -493,7 +529,8 @@ def main(argv: list[str] | None = None) -> int:
 
     actionable = (args.backup or args.archive or args.upload or args.notify or
                   args.all or args.validate or args.cleanup or args.test_connection or
-                  args.show_config or args.configure or args.export_jenkins)
+                  args.show_config or args.configure or args.export_jenkins or
+                  args.refresh_cookies)
     if not actionable:
         menu(cfg, args.out, args.archive_dir)        # interactive
         return 0
@@ -503,6 +540,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.export_jenkins:
         do_export_jenkins(cfg)
+        return 0
+    if args.refresh_cookies:
+        do_refresh_cookies(cfg)
         return 0
     if args.show_config:
         do_show(cfg)

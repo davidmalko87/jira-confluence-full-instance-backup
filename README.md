@@ -113,6 +113,7 @@ jira-confluence-backup            # or: python main.py   /   python -m backup
   5) Archive ./out       11) Show configuration
   6) Upload ./archive    12) List local backups
                          13) Export Jenkins setup
+                         14) Refresh Jira cookies
   0) Exit
 ```
 

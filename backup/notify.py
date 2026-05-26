@@ -25,6 +25,12 @@ from pathlib import Path
 
 import requests
 
+from . import jira
+
+# Warn in the notification when the Jira session cookie is within this many days
+# of expiry, so operators refresh it before a backup fails.
+COOKIE_WARN_DAYS = 7
+
 
 @dataclass
 class BackupReport:
@@ -32,6 +38,7 @@ class BackupReport:
     timestamp: str
     archives: list[tuple[str, float]] = field(default_factory=list)  # (name, MB)
     build_url: str = ""
+    warnings: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -57,7 +64,24 @@ class BackupReport:
             lines.append("Archives: (none found)")
         if self.build_url:
             lines.append(f"Build: {self.build_url}")
+        for w in self.warnings:
+            lines.append(f"WARNING: {w}")
         return "\n".join(lines)
+
+
+def _cookie_warnings() -> list[str]:
+    """Warn if the Jira session cookie (from JIRA_COOKIES env) is near expiry."""
+    blob = os.environ.get("JIRA_COOKIES", "")
+    if not blob:
+        return []
+    days = jira.session_token_days_left(jira.cookies_from_blob(blob))
+    if days is None:
+        return []
+    if days < 0:
+        return ["Jira session cookie has EXPIRED — refresh JIRA_COOKIES."]
+    if days < COOKIE_WARN_DAYS:
+        return [f"Jira session cookie expires in ~{days:.0f} day(s) — refresh it soon."]
+    return []
 
 
 def build_report(status: str, archive_dir: Path, build_url: str) -> BackupReport:
@@ -66,8 +90,8 @@ def build_report(status: str, archive_dir: Path, build_url: str) -> BackupReport
     if archive_dir.exists():
         for a in sorted(archive_dir.glob("*.7z")):
             archives.append((a.name, a.stat().st_size / (1024 * 1024)))
-    return BackupReport(status=status, timestamp=now,
-                        archives=archives, build_url=build_url)
+    return BackupReport(status=status, timestamp=now, archives=archives,
+                        build_url=build_url, warnings=_cookie_warnings())
 
 
 # ── Channel renderers — each raises on failure, returns None on success ──
@@ -88,6 +112,9 @@ def send_google_chat(report: BackupReport, url: str) -> None:
         widgets.append({"decoratedText": {
             "topLabel": "Archives",
             "text": "<br>".join(report.archive_lines()), "wrapText": True}})
+    for w in report.warnings:
+        widgets.append({"decoratedText": {"topLabel": "Warning",
+                                          "text": f"<b>⚠ {w}</b>", "wrapText": True}})
     if report.build_url:
         widgets.append({"buttonList": {"buttons": [
             {"text": "View build logs",
@@ -109,6 +136,8 @@ def send_discord(report: BackupReport, url: str) -> None:
     if report.archives:
         fields.append({"name": "Archives",
                        "value": "\n".join(report.archive_lines())})
+    if report.warnings:
+        fields.append({"name": "⚠ Warning", "value": "\n".join(report.warnings)})
     embed = {"title": "Atlassian Weekly Backup",
              "color": 0x0F9D58 if report.ok else 0xDB4437,
              "fields": fields}
@@ -122,6 +151,8 @@ def send_teams(report: BackupReport, url: str) -> None:
              {"name": "Time", "value": report.timestamp}]
     if report.archives:
         facts.append({"name": "Archives", "value": "; ".join(report.archive_lines())})
+    if report.warnings:
+        facts.append({"name": "Warning", "value": "; ".join(report.warnings)})
     card = {
         "@type": "MessageCard", "@context": "http://schema.org/extensions",
         "themeColor": "0F9D58" if report.ok else "DB4437",
@@ -142,6 +173,7 @@ def send_webhook(report: BackupReport, url: str) -> None:
         "timestamp": report.timestamp,
         "archives": [{"name": n, "size_mb": round(mb, 1)} for n, mb in report.archives],
         "build_url": report.build_url,
+        "warnings": report.warnings,
         "text": report.summary_text(),
     })
 
