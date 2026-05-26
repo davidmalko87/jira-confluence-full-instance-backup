@@ -1,0 +1,6 @@
+# Core dependencies — always required.
+# Cloud storage SDKs are OPTIONAL and live in requirements-<provider>.txt;
+# install only the one matching your STORAGE_PROVIDER. Notifications
+# (webhook/chat/email) need no extra deps — webhooks use requests, email
+# uses the stdlib.
+requests>=2.31.0

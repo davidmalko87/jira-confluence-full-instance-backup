@@ -1,0 +1,314 @@
+"""
+Jira full-instance backup via cookie-authenticated UI session.
+
+Auth model: replays browser session cookies + UI headers (X-Requested-With, Referer, Origin).
+API token + Basic auth does NOT work — Atlassian gates this endpoint to UI sessions only.
+
+Cookies expire roughly every 30 days (tenant.session.token JWT). When that happens,
+this script returns exit code 2 — Jenkins flags the build, you refresh cookies in
+Jenkins Credentials, next run succeeds.
+
+48-hour cooldown is handled gracefully (exit 0 with marker file, not a failure).
+"""
+import argparse
+import base64
+import binascii
+import json
+import os
+import sys
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+
+import requests
+
+from . import naming, ui
+
+
+# Cookies actually required by Atlassian. Everything else in the captured
+# cookie blob (ajs_anonymous_id, intercom-*, lastViewedForm-*, theme prefs)
+# is tracking noise.
+REQUIRED_COOKIES = [
+    "tenant.session.token",   # JWT, ~30 day lifetime — the critical one
+    "atlassian.xsrf.token",   # XSRF protection
+    "JSESSIONID",             # Servlet session
+    "AWSALB",                 # LB sticky routing
+    "AWSALBCORS",
+]
+
+USER_AGENT = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+)
+
+
+def cookies_from_blob(blob: str) -> dict:
+    """Parse 'name=value; name2=value2; ...' into a dict (no validation)."""
+    cookies = {}
+    for part in blob.split(";"):
+        part = part.strip()
+        if "=" not in part:
+            continue
+        name, _, value = part.partition("=")
+        cookies[name.strip()] = value.strip()
+    return cookies
+
+
+def missing_cookies(cookies: dict) -> list[str]:
+    return [c for c in REQUIRED_COOKIES if c not in cookies]
+
+
+def parse_cookie_blob(blob: str) -> dict:
+    """Parse and validate the cookie blob; exit 2 if required cookies are absent."""
+    cookies = cookies_from_blob(blob)
+    missing = missing_cookies(cookies)
+    if missing:
+        print(f"[ERROR] Required cookies missing from JIRA_COOKIES: {missing}",
+              file=sys.stderr)
+        print("[HINT] Refresh cookies — see README cookie-refresh procedure",
+              file=sys.stderr)
+        sys.exit(2)
+    return cookies
+
+
+def session_token_days_left(cookies: dict) -> float | None:
+    """Decode the tenant.session.token JWT 'exp' (no signature check) → days left."""
+    token = cookies.get("tenant.session.token", "")
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        data = json.loads(base64.urlsafe_b64decode(payload))
+    except (binascii.Error, ValueError):
+        return None
+    exp = data.get("exp")
+    if not isinstance(exp, (int, float)):
+        return None
+    return (exp - time.time()) / 86400
+
+
+def ui_headers(site: str) -> dict:
+    """Headers Atlassian's auth gate requires to recognize the request as UI-originated."""
+    return {
+        "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Content-Type": "application/json",
+        "Origin": site,
+        "Referer": f"{site}/secure/admin/CloudExport.jspa",
+        "X-Requested-With": "XMLHttpRequest",
+        "User-Agent": USER_AGENT,
+    }
+
+
+def trigger_backup(site: str, cookies: dict) -> dict | None:
+    """
+    POST /rest/backup/1/export/runbackup
+    Returns parsed response dict, or None if cooldown active (412).
+    Raises on other errors.
+    """
+    url = f"{site}/rest/backup/1/export/runbackup"
+    # Body shape that matches the browser UI exactly (strings, no "what" field).
+    # Confirmed empirically via captured cURL — booleans + "what":"all" returns
+    # "Invalid request payload" on current Atlassian schema.
+    body = {"cbAttachments": "true", "exportToCloud": "true"}
+
+    resp = requests.post(url, headers=ui_headers(site), cookies=cookies,
+                         json=body, timeout=60)
+
+    if resp.status_code == 412:
+        print(f"[COOLDOWN] {resp.text}")
+        return None
+
+    if resp.status_code == 403:
+        body_text = resp.text
+        if "only accessible from the UI" in body_text:
+            print(f"[ERROR] Cookie auth rejected — cookies likely expired.",
+                  file=sys.stderr)
+            print(f"[HINT] Refresh JIRA_COOKIES in Jenkins Credentials.",
+                  file=sys.stderr)
+            sys.exit(2)
+        print(f"[ERROR] 403 from runbackup: {body_text}", file=sys.stderr)
+        sys.exit(1)
+
+    resp.raise_for_status()
+
+    # Print raw response on first runs to verify shape — task ID extraction
+    # depends on it. Field name varies by endpoint version.
+    print(f"[DEBUG] runbackup response: {resp.text}")
+    return resp.json() if resp.text else {}
+
+
+def get_last_task_id(site: str, cookies: dict) -> str | None:
+    """Fallback if runbackup response doesn't include task ID directly."""
+    url = f"{site}/rest/backup/1/export/lastTaskId"
+    resp = requests.get(url, headers=ui_headers(site), cookies=cookies, timeout=30)
+    if resp.status_code != 200:
+        return None
+    return resp.text.strip().strip('"') or None
+
+
+def poll_progress(site: str, cookies: dict, task_id: str,
+                  timeout_sec: int = 3600, interval_sec: int = 30) -> dict:
+    """
+    GET /rest/backup/1/export/getProgress?taskId={taskId}
+    Returns final response dict when backup is complete.
+    """
+    url = f"{site}/rest/backup/1/export/getProgress"
+    headers = ui_headers(site)
+    headers.pop("Content-Type", None)  # GET request
+
+    deadline = time.time() + timeout_sec
+    poll_count = 0
+
+    while time.time() < deadline:
+        poll_count += 1
+        resp = requests.get(
+            url,
+            headers=headers,
+            cookies=cookies,
+            params={"taskId": task_id, "_": str(int(time.time() * 1000))},
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        progress = data.get("progress", 0)
+        status = data.get("status", data.get("currentStatus", ""))
+        ui.info(f"[poll {poll_count}] progress={progress}% status={status}")
+
+        # Backup complete when 'result' field appears (download fileId)
+        if data.get("result"):
+            return data
+
+        time.sleep(interval_sec)
+
+    raise TimeoutError(f"Backup did not complete within {timeout_sec}s")
+
+
+def download_backup(site: str, cookies: dict, file_id: str, out_path: Path,
+                    show_progress: bool = False) -> int:
+    """
+    GET /plugins/servlet/export/download/?fileId={fileId}
+    Streams to disk. Returns bytes written.
+    """
+    url = f"{site}/plugins/servlet/export/download/"
+    headers = {"User-Agent": USER_AGENT}
+
+    bytes_written = 0
+    with requests.get(url, headers=headers, cookies=cookies,
+                      params={"fileId": file_id}, stream=True,
+                      timeout=600) as resp:
+        resp.raise_for_status()
+        total = int(resp.headers.get("Content-Length") or 0) or None
+
+        def _stream(update=None):
+            nonlocal bytes_written
+            with open(out_path, "wb") as f:
+                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+                        bytes_written += len(chunk)
+                        if update:
+                            update(len(chunk))
+
+        if show_progress:
+            with ui.progress_bar(total, f"Downloading {out_path.name}") as update:
+                _stream(update)
+        else:
+            _stream()
+
+    return bytes_written
+
+
+def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
+    """Non-exiting check: cookies present + session live + JWT expiry hint."""
+    cookies = cookies_from_blob(cookie_blob)
+    missing = missing_cookies(cookies)
+    if missing:
+        return False, f"Missing required cookies: {missing}"
+
+    days = session_token_days_left(cookies)
+    note = f"; session token ~{days:.0f}d left" if days is not None else ""
+    if days is not None and days < 0:
+        return False, f"Session token expired{note} — refresh cookies"
+
+    try:
+        resp = requests.get(f"{site}/rest/backup/1/export/lastTaskId",
+                            headers=ui_headers(site), cookies=cookies, timeout=30)
+    except requests.RequestException as exc:
+        return False, f"Request failed: {exc}"
+
+    if resp.status_code == 200:
+        return True, f"Jira cookies valid (HTTP 200){note}"
+    if resp.status_code in (401, 403):
+        return False, f"Cookies rejected (HTTP {resp.status_code}) — refresh needed{note}"
+    return False, f"Unexpected HTTP {resp.status_code}{note}"
+
+
+def run_backup(site: str, cookies: dict, out_dir: Path,
+               name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
+               poll_timeout: int = 3600) -> Path | None:
+    """Full trigger→poll→download flow. Returns the .zip path, or None on cooldown."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    ui.info(f"Triggering Jira backup on {site}")
+    trigger_result = trigger_backup(site, cookies)
+
+    if trigger_result is None:
+        marker = out_dir / "jira_cooldown.txt"
+        marker.write_text(f"Cooldown active at {datetime.now(timezone.utc).isoformat()}\n")
+        ui.warn("Jira backup skipped — 48h cooldown still active")
+        return None
+
+    # Extract task ID — field name varies across endpoint versions.
+    task_id = (trigger_result.get("taskId") or
+               trigger_result.get("id") or
+               trigger_result.get("result"))
+    if not task_id:
+        ui.info("No task ID in runbackup response, querying lastTaskId")
+        task_id = get_last_task_id(site, cookies)
+    if not task_id:
+        raise RuntimeError(f"Cannot determine task ID. Raw response: {trigger_result}")
+
+    ui.info(f"Polling progress (task {task_id})")
+    final = poll_progress(site, cookies, str(task_id), timeout_sec=poll_timeout)
+
+    file_id = final.get("result") or final.get("fileName")
+    if not file_id:
+        raise RuntimeError(f"No fileId in completion response: {final}")
+
+    out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
+    size = download_backup(site, cookies, file_id, out_path, show_progress=True)
+    ui.ok(f"Jira backup: {out_path} ({size / (1024 * 1024):.1f} MB)")
+    return out_path
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--site", required=True,
+                        help="Jira site root, e.g. https://<YOUR_SITE>.atlassian.net")
+    parser.add_argument("--out", required=True, type=Path,
+                        help="Output directory for downloaded backup")
+    parser.add_argument("--poll-timeout", type=int, default=3600,
+                        help="Max seconds to wait for backup to complete")
+    parser.add_argument("--name-template",
+                        default=os.environ.get("PRODUCT_NAME_TEMPLATE",
+                                               naming.DEFAULT_PRODUCT_TEMPLATE),
+                        help="Filename template (tokens: {product}{site}{date}"
+                             "{time}{datetime}{timestamp})")
+    args = parser.parse_args()
+
+    cookie_blob = os.environ.get("JIRA_COOKIES")
+    if not cookie_blob:
+        sys.exit("JIRA_COOKIES env var not set — bind via Jenkins withCredentials")
+
+    cookies = parse_cookie_blob(cookie_blob)
+    try:
+        run_backup(args.site, cookies, args.out,
+                   name_template=args.name_template, poll_timeout=args.poll_timeout)
+    except (RuntimeError, ValueError) as exc:
+        sys.exit(str(exc))
+
+
+if __name__ == "__main__":
+    main()
