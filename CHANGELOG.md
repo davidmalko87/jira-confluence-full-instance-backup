@@ -6,13 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
-## [0.6.0] - 2026-05-27
+## [0.7.0] - 2026-05-27
 
 ### Added
 - **Independent backup stages** — a Jira failure (expired cookies, error) or cooldown no longer aborts the pipeline. The Jira and Confluence stages are wrapped so a failure marks the build **UNSTABLE** and continues; whatever backup *did* succeed is still archived and uploaded. Implemented in Jenkins (`catchError`) and mirrored in the local CLI (`do_backup` isolates each product).
 - **Cooldown now ships the existing backup** — when Jira reports the 48h cooldown (HTTP 412), instead of producing nothing the run downloads the **most recent existing** Jira backup (still retained by Atlassian) so the archive/upload still happens. A new `--download-existing` flag (env `JIRA_DOWNLOAD_EXISTING=true`, or the **JIRA_DOWNLOAD_EXISTING** build parameter) forces this "fetch the latest existing backup, don't trigger a new one" mode — handy for reruns.
 - **Per-product build toggles** — `BACKUP_JIRA` / `BACKUP_CONFLUENCE` checkboxes let you back up just one product. Archive and Upload are gated on a real backup `.zip` existing, so a cooldown marker alone never produces an empty upload.
 - **`unstable` notification status** — notifications now render an amber ⚠️ "UNSTABLE" report (distinct from success/failure) and the Notify stage reports the build's real result.
+
+---
+
+## [0.6.0] - 2026-05-27
 
 ### Changed
 - **Jenkins "Build with Parameters" is now checkbox-driven** (no plugin required). Storage backends and notification channels are exposed as native `booleanParam` checkboxes — one per backend (GCS / S3 / Azure / Local, each with its own destination field) and one per channel (Google Chat / Slack / Discord / Teams / Email / Webhook) — instead of hand-typed comma lists. Compression is a `0`–`9` dropdown. The `Setup` stage reassembles the aligned `STORAGE_PROVIDER` / `STORAGE_DEST` / `NOTIFY_CHANNELS` values the Python layer expects, so nothing downstream changes. If no storage box is ticked the build falls back to a local copy, so a backup is never silently skipped.
@@ -112,6 +116,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.7.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.7.0
 [0.6.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.6.0
 [0.5.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.1
 [0.5.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.5.0
