@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+jobs:
+  lint-and-check:
+    name: Lint & smoke test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint with ruff
+        run: ruff check .
+
+      - name: Verify package imports
+        run: |
+          python -c "import backup; print('version:', backup.__version__)"
+          python -c "from backup import jira, confluence, archive, upload, notify"
+          python -c "from backup import manifest, config, naming, ui, cli"
+
+      - name: Verify entry points load
+        run: |
+          python -m backup --help
+          python main.py --help

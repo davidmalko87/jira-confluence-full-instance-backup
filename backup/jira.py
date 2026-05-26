@@ -122,9 +122,9 @@ def trigger_backup(site: str, cookies: dict) -> dict | None:
     if resp.status_code == 403:
         body_text = resp.text
         if "only accessible from the UI" in body_text:
-            print(f"[ERROR] Cookie auth rejected — cookies likely expired.",
+            print("[ERROR] Cookie auth rejected — cookies likely expired.",
                   file=sys.stderr)
-            print(f"[HINT] Refresh JIRA_COOKIES in Jenkins Credentials.",
+            print("[HINT] Refresh JIRA_COOKIES in Jenkins Credentials.",
                   file=sys.stderr)
             sys.exit(2)
         print(f"[ERROR] 403 from runbackup: {body_text}", file=sys.stderr)
