@@ -45,8 +45,26 @@ class BackupReport:
         return self.status == "success"
 
     @property
+    def unstable(self) -> bool:
+        return self.status == "unstable"
+
+    @property
     def icon(self) -> str:
-        return "✅" if self.ok else "❌"
+        if self.ok:
+            return "✅"
+        if self.unstable:
+            return "⚠️"
+        return "❌"
+
+    @property
+    def color_int(self) -> int:
+        """Discord embed color: green / amber / red."""
+        return 0x0F9D58 if self.ok else (0xF4B400 if self.unstable else 0xDB4437)
+
+    @property
+    def color_hex(self) -> str:
+        """Teams themeColor: green / amber / red."""
+        return "0F9D58" if self.ok else ("F4B400" if self.unstable else "DB4437")
 
     def archive_lines(self) -> list[str]:
         return [f"{name} — {mb:.1f} MB" for name, mb in self.archives]
@@ -139,7 +157,7 @@ def send_discord(report: BackupReport, url: str) -> None:
     if report.warnings:
         fields.append({"name": "⚠ Warning", "value": "\n".join(report.warnings)})
     embed = {"title": "Atlassian Weekly Backup",
-             "color": 0x0F9D58 if report.ok else 0xDB4437,
+             "color": report.color_int,
              "fields": fields}
     if report.build_url:
         embed["url"] = report.build_url
@@ -155,7 +173,7 @@ def send_teams(report: BackupReport, url: str) -> None:
         facts.append({"name": "Warning", "value": "; ".join(report.warnings)})
     card = {
         "@type": "MessageCard", "@context": "http://schema.org/extensions",
-        "themeColor": "0F9D58" if report.ok else "DB4437",
+        "themeColor": report.color_hex,
         "summary": "Atlassian Weekly Backup",
         "sections": [{"activityTitle": "Atlassian Weekly Backup", "facts": facts}],
     }
@@ -242,7 +260,8 @@ def main():
     parser = argparse.ArgumentParser(description="Send backup status to channels")
     parser.add_argument("--channels", required=True,
                         help=f"Comma list of: {','.join(sorted(CHANNELS))}")
-    parser.add_argument("--status", required=True, choices=["success", "failure"])
+    parser.add_argument("--status", required=True,
+                        choices=["success", "unstable", "failure"])
     parser.add_argument("--archive-dir", type=Path, default=Path("./archive"))
     parser.add_argument("--build-url", default="")
     parser.add_argument("--webhook-url", default=os.environ.get("NOTIFY_WEBHOOK_URL", ""),
