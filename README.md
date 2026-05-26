@@ -1,8 +1,10 @@
 # Jira & Confluence Full-Instance Backup
 
 [![CI](https://github.com/davidmalko87/jira-confluence-full-instance-backup/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/davidmalko87/jira-confluence-full-instance-backup/actions/workflows/ci.yml)
+[![PyPI version](https://img.shields.io/pypi/v/jira-confluence-full-instance-backup.svg?logo=pypi&logoColor=white)](https://pypi.org/project/jira-confluence-full-instance-backup/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/jira-confluence-full-instance-backup.svg)](https://pypi.org/project/jira-confluence-full-instance-backup/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg?logo=python&logoColor=white)](https://www.python.org/)
+[![Python](https://img.shields.io/pypi/pyversions/jira-confluence-full-instance-backup.svg?logo=python&logoColor=white)](https://pypi.org/project/jira-confluence-full-instance-backup/)
 [![Jira Cloud](https://img.shields.io/badge/Jira-Cloud-0052CC.svg?logo=jira&logoColor=white)](https://www.atlassian.com/software/jira)
 [![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D.svg?logo=confluence&logoColor=white)](https://www.atlassian.com/software/confluence)
 [![Storage](https://img.shields.io/badge/storage-GCS%20%7C%20S3%20%7C%20Azure%20%7C%20local-success.svg)](#storage-backends)
