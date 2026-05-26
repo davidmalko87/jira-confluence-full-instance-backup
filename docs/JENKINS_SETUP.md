@@ -28,6 +28,15 @@ new PATH (`Restart-Service Jenkins`), and allow script execution once:
 `Set-ExecutionPolicy RemoteSigned -Scope LocalMachine` (as admin). The pipeline
 sets `SEVEN_ZIP_PATH` to `C:\Program Files\7-Zip\7z.exe` automatically.
 
+> **`python` not recognized?** The Jenkins **service account** often has a
+> different PATH than your user (a per-user Python install isn't visible to it).
+> The pipeline auto-detects `python`/`py`, but if neither is on the service PATH,
+> set the **`PYTHON_BIN`** env var to the full interpreter path (e.g.
+> `C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe`) — in
+> `main.py` Configure (carried by the export) or *Manage Jenkins → System →
+> Global properties → Environment variables*. Alternatively, reinstall Python
+> "for all users" + "Add to PATH" and `Restart-Service Jenkins`.
+
 > A cloud provider SDK (`google-cloud-storage`, `boto3`, `azure-storage-blob`)
 > is **not** needed on the agent up front — the pipeline `pip install`s the one
 > matching `STORAGE_PROVIDER` into a per-build virtualenv.

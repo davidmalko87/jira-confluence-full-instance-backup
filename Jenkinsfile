@@ -21,11 +21,21 @@ def runPy(String args) {
 
 // Create the venv + install core and EACH selected provider's SDK (STORAGE_PROVIDER
 // may be a comma list). Reads env.STORAGE_PROVIDER (set in the Setup preflight).
+// The interpreter for the initial `venv` creation. Uses PYTHON_BIN if set
+// (handy when the Jenkins service account's PATH lacks Python — set it to the
+// full python.exe path), else auto-detects python3/python (Linux) or python/py
+// (Windows). After the venv exists, its own python is used.
 def setupVenv() {
     if (isUnix()) {
         sh '''
             set -e
-            python3 -m venv venv
+            PY="$PYTHON_BIN"
+            if [ -z "$PY" ]; then
+                for c in python3 python; do command -v "$c" >/dev/null 2>&1 && PY="$c" && break; done
+            fi
+            PY="${PY:-python3}"
+            echo "Using Python: $PY"
+            "$PY" -m venv venv
             venv/bin/python -m pip install --quiet --upgrade pip
             venv/bin/python -m pip install --quiet -r requirements.txt
             for p in $(echo "$STORAGE_PROVIDER" | tr ',' ' '); do
@@ -39,7 +49,15 @@ def setupVenv() {
         env.SEVEN_ZIP_PATH = 'C:\\Program Files\\7-Zip\\7z.exe'
         powershell '''
             $ErrorActionPreference = "Stop"
-            python -m venv venv
+            $py = $env:PYTHON_BIN
+            if (-not $py) {
+                foreach ($cand in @('python','py')) {
+                    if (Get-Command $cand -ErrorAction SilentlyContinue) { $py = $cand; break }
+                }
+            }
+            if (-not $py) { $py = 'python' }
+            Write-Host "Using Python: $py"
+            & $py -m venv venv
             venv\\Scripts\\python.exe -m pip install --quiet --upgrade pip
             venv\\Scripts\\python.exe -m pip install --quiet -r requirements.txt
             foreach ($p in ($env:STORAGE_PROVIDER -split ',')) {

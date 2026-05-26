@@ -157,7 +157,8 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
                      ("PRODUCT_NAME_TEMPLATE", cfg.product_name_template),
                      ("ARCHIVE_NAME_TEMPLATE", cfg.archive_name_template),
                      ("ARCHIVE_COMPRESSION", cfg.archive_compression),
-                     ("BACKUP_CRON", cfg.backup_cron)):
+                     ("BACKUP_CRON", cfg.backup_cron),
+                     ("PYTHON_BIN", cfg.python_bin)):
         if val:
             env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
             summary.append(f"global env {key} = {val}")
