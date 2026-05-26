@@ -31,6 +31,25 @@ DEFAULT_OUT = Path("out")
 DEFAULT_ARCHIVE = Path("archive")
 WEBHOOK_CHANNEL_HINTS = ("chat", "slack", "discord", "teams", "webhook")
 
+# Strings that look like .env.example placeholders — never offered as a default.
+_PLACEHOLDER_BITS = ("<", ">", "example.com", "YOUR_")
+
+
+def _pref(value: str) -> str | None:
+    """Default to show in a prompt — hides obvious placeholder values so the
+    Configure flow doesn't look pre-filled with example junk."""
+    if not value or any(bit in value for bit in _PLACEHOLDER_BITS):
+        return None
+    return value
+
+
+def _normalize_site(url: str) -> str:
+    """Add https:// if the user typed a bare host; trim trailing slash."""
+    url = (url or "").strip().rstrip("/")
+    if url and not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    return url
+
 
 # ─────────────────────────── orchestration steps ───────────────────────────
 
@@ -96,7 +115,10 @@ def do_archive(cfg: config.Config, out_dir: Path, archive_dir: Path, *,
 
 
 def do_upload(cfg: config.Config, archive_dir: Path, *, dry_run: bool = False) -> None:
-    ui.section(f"Upload ({cfg.storage_provider})")
+    ui.section(f"Upload ({cfg.storage_provider or 'not set'})")
+    if cfg.storage_provider not in upload.BACKENDS:
+        raise RuntimeError(f"STORAGE_PROVIDER '{cfg.storage_provider}' invalid — "
+                           f"choose one of: {', '.join(sorted(upload.BACKENDS))}")
     if dry_run:
         n = len(list(archive_dir.glob("*.7z"))) if archive_dir.exists() else 0
         ui.info(f"[DRY] would upload {n} archive(s) + manifest to "
@@ -116,6 +138,9 @@ def do_notify(cfg: config.Config, status: str, archive_dir: Path,
         ui.info(f"[DRY] would notify channels={cfg.notify_channels} status={status}")
         return
     channels = [c.strip() for c in cfg.notify_channels.split(",") if c.strip()]
+    if not channels:
+        ui.info("No notification channels configured — skipping.")
+        return
     report = notify.build_report(status, archive_dir, build_url)
     failures = notify.dispatch(channels, report, cfg.notify_webhook_url)
     if failures:
@@ -182,47 +207,102 @@ def do_list(out_dir: Path, archive_dir: Path) -> None:
 
 def do_configure(cfg: config.Config) -> None:
     ui.section("Configure credentials → .env")
-    ui.info("Press Enter to keep the current value. Saved to .env (gitignored).")
+    ui.info("Enter values; press Enter to accept the [default] / keep current.")
+    ui.info("Secrets (token, cookies, passwords) are entered HIDDEN — paste, then Enter.")
+    ui.info("Minimum to back up: Jira needs site + cookies; Confluence needs email + token.")
 
-    cfg.site_jira = ui.prompt("Jira site URL", cfg.site_jira)
-    default_conf = cfg.site_confluence or (f"{cfg.site_jira}/wiki" if cfg.site_jira else "")
-    cfg.site_confluence = ui.prompt("Confluence site URL (.../wiki)", default_conf)
-    cfg.atl_email = ui.prompt("Atlassian account email", cfg.atl_email)
-    cfg.atl_token = ui.prompt("Atlassian API token (Confluence)", cfg.atl_token, secret=True)
-    cfg.jira_cookies = ui.prompt("Jira cookie blob (paste)", cfg.jira_cookies, secret=True)
-    cfg.archive_password = ui.prompt("Archive password (7z; blank = no encryption)",
-                                     cfg.archive_password, secret=True)
-    cfg.archive_compression = ui.prompt("Compression level 0-9 (0=store, 9=ultra)",
-                                        cfg.archive_compression)
-    cfg.product_name_template = ui.prompt("Product filename template", cfg.product_name_template)
-    cfg.archive_name_template = ui.prompt("Archive (.7z) filename template",
-                                          cfg.archive_name_template)
+    # ── Atlassian site & Confluence auth ──
+    ui.section("Atlassian")
+    cfg.site_jira = _normalize_site(ui.prompt(
+        "Jira site URL (e.g. https://acme.atlassian.net)", _pref(cfg.site_jira)))
+    conf_default = _pref(cfg.site_confluence) or (f"{cfg.site_jira}/wiki" if cfg.site_jira else None)
+    cfg.site_confluence = _normalize_site(ui.prompt(
+        "Confluence site URL (usually the Jira URL + /wiki)", conf_default))
+    cfg.atl_email = ui.prompt("Atlassian account email", _pref(cfg.atl_email))
+    ui.info("API token: create one at https://id.atlassian.com/manage-api-tokens")
+    cfg.atl_token = ui.prompt("Atlassian API token (for Confluence)",
+                              _pref(cfg.atl_token), secret=True)
 
-    cfg.storage_provider = ui.prompt("Storage provider (gcs/s3/azure/local)",
-                                     cfg.storage_provider)
-    cfg.storage_dest = ui.prompt("Storage dest (bucket/container/dir)", cfg.storage_dest)
+    # ── Jira cookie blob — with how-to and validation feedback ──
+    ui.section("Jira session cookies")
+    ui.info("Jira's backup endpoint is UI-gated, so it needs your browser session")
+    ui.info("cookies (a one-line 'name=value; name=value; ...' blob). To get it:")
+    ui.info("  1. Log in, open  <your-site>/secure/admin/CloudExport.jspa")
+    ui.info("  2. F12 -> Application -> Cookies; copy these 5 values:")
+    ui.info("     tenant.session.token, atlassian.xsrf.token, JSESSIONID, AWSALB, AWSALBCORS")
+    ui.info("  3. Join them as:  name=value; name2=value2; ...")
+    ui.info("  Tip: DevTools -> Network -> right-click a request -> Copy as cURL,")
+    ui.info("  then paste the text after  -b  (that's the cookie blob).")
+    blob = ui.prompt("Jira cookie blob", _pref(cfg.jira_cookies), secret=True)
+    if blob:
+        cfg.jira_cookies = blob
+        cks = jira.cookies_from_blob(blob)
+        missing = jira.missing_cookies(cks)
+        if missing:
+            ui.warn(f"captured {len(cks)} cookie(s), but MISSING required: {missing}")
+        else:
+            days = jira.session_token_days_left(cks)
+            extra = f"; session token ~{days:.0f} days left" if days is not None else ""
+            ui.ok(f"captured {len(cks)} cookie(s); all required present{extra}")
+
+    # ── Archive ──
+    ui.section("Archive")
+    cfg.archive_password = ui.prompt("Archive password (blank = no encryption)",
+                                     _pref(cfg.archive_password), secret=True)
+    cfg.archive_compression = ui.prompt("Compression 0-9 (0=fastest, 9=smallest)",
+                                        cfg.archive_compression or "5")
+    cfg.product_name_template = ui.prompt(
+        "Per-product filename template", cfg.product_name_template or naming.DEFAULT_PRODUCT_TEMPLATE)
+    cfg.archive_name_template = ui.prompt(
+        "Archive (.7z) filename template", cfg.archive_name_template or naming.DEFAULT_ARCHIVE_TEMPLATE)
+
+    # ── Storage ──
+    ui.section("Storage")
+    ui.info("Where to upload backups:")
+    ui.info("  local - a folder / mounted drive (no account, simplest)")
+    ui.info("  gcs   - Google Cloud Storage      s3    - AWS S3 or S3-compatible (R2/B2/MinIO)")
+    ui.info("  azure - Azure Blob Storage")
+    cfg.storage_provider = (ui.prompt("Storage provider [local/gcs/s3/azure]",
+                                      cfg.storage_provider or "local") or "local").lower()
+    dest_hint = {"local": "folder path, e.g. ./backups or /mnt/backups",
+                 "gcs": "bucket name", "s3": "bucket name",
+                 "azure": "container name"}.get(cfg.storage_provider, "bucket/container/folder")
+    cfg.storage_dest = ui.prompt(f"Storage destination ({dest_hint})", _pref(cfg.storage_dest))
     if cfg.storage_provider == "gcs":
-        cfg.gcp_credentials = ui.prompt("Path to GCP SA key JSON", cfg.gcp_credentials)
+        cfg.gcp_credentials = ui.prompt("Path to GCP service-account JSON key",
+                                        _pref(cfg.gcp_credentials) or "./sa-key.json")
     elif cfg.storage_provider == "s3":
-        cfg.aws_access_key_id = ui.prompt("AWS access key id", cfg.aws_access_key_id, secret=True)
+        ui.info("Leave endpoint blank for AWS; set it for R2 / B2 / MinIO / Spaces.")
+        cfg.aws_access_key_id = ui.prompt("AWS access key id",
+                                          _pref(cfg.aws_access_key_id), secret=True)
         cfg.aws_secret_access_key = ui.prompt("AWS secret access key",
-                                              cfg.aws_secret_access_key, secret=True)
-        cfg.aws_default_region = ui.prompt("AWS region", cfg.aws_default_region)
-        cfg.s3_endpoint_url = ui.prompt("S3 endpoint URL (blank for AWS)", cfg.s3_endpoint_url)
+                                              _pref(cfg.aws_secret_access_key), secret=True)
+        cfg.aws_default_region = ui.prompt("AWS region",
+                                           _pref(cfg.aws_default_region) or "us-east-1")
+        cfg.s3_endpoint_url = ui.prompt("S3 endpoint URL (blank for AWS)",
+                                        _pref(cfg.s3_endpoint_url))
     elif cfg.storage_provider == "azure":
-        cfg.azure_conn = ui.prompt("Azure connection string", cfg.azure_conn, secret=True)
+        cfg.azure_conn = ui.prompt("Azure Storage connection string",
+                                   _pref(cfg.azure_conn), secret=True)
 
-    cfg.notify_channels = ui.prompt("Notify channels (comma)", cfg.notify_channels)
+    # ── Notifications ──
+    ui.section("Notifications")
+    ui.info("Optional. Comma-separated, or leave blank for none. Choices:")
+    ui.info("  slack  discord  teams  google-chat  -> share one webhook URL")
+    ui.info("  email  -> SMTP settings             webhook -> raw JSON POST to your own URL")
+    cfg.notify_channels = ui.prompt("Notify channels (blank = none)", _pref(cfg.notify_channels))
     if any(h in cfg.notify_channels for h in WEBHOOK_CHANNEL_HINTS):
-        cfg.notify_webhook_url = ui.prompt("Notify webhook URL", cfg.notify_webhook_url, secret=True)
+        cfg.notify_webhook_url = ui.prompt("Webhook URL (for slack/discord/teams/chat/webhook)",
+                                           _pref(cfg.notify_webhook_url), secret=True)
     if "email" in cfg.notify_channels:
-        cfg.smtp_host = ui.prompt("SMTP host", cfg.smtp_host)
-        cfg.smtp_port = ui.prompt("SMTP port", cfg.smtp_port)
-        cfg.smtp_user = ui.prompt("SMTP user", cfg.smtp_user)
-        cfg.smtp_password = ui.prompt("SMTP password", cfg.smtp_password, secret=True)
-        cfg.smtp_from = ui.prompt("From address", cfg.smtp_from)
-        cfg.smtp_to = ui.prompt("To address(es)", cfg.smtp_to)
+        cfg.smtp_host = ui.prompt("SMTP host", _pref(cfg.smtp_host))
+        cfg.smtp_port = ui.prompt("SMTP port (465 = SSL, 587 = STARTTLS)", cfg.smtp_port or "587")
+        cfg.smtp_user = ui.prompt("SMTP username", _pref(cfg.smtp_user))
+        cfg.smtp_password = ui.prompt("SMTP password", _pref(cfg.smtp_password), secret=True)
+        cfg.smtp_from = ui.prompt("From address", _pref(cfg.smtp_from))
+        cfg.smtp_to = ui.prompt("To address(es), comma-separated", _pref(cfg.smtp_to))
 
+    ui.section("Save")
     if ui.confirm("Save to .env?", default=True):
         path = config.save_env(cfg)
         ui.ok(f"Saved {path} (chmod 600 where supported)")

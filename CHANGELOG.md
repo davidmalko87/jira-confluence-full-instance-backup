@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.1.1] - 2026-05-26
+
+### Changed
+- Interactive **Configure** flow is now self-explanatory: it lists the choices for storage providers and notification channels, explains how to obtain the Jira cookie blob, validates the pasted cookies (reports missing ones and session-token expiry), and normalizes a bare site host to `https://`.
+- Secret prompts now state that input is hidden on purpose.
+- Neutral defaults — `STORAGE_PROVIDER` defaults to `local` (no account/SDK needed) and `NOTIFY_CHANNELS` defaults to none, instead of preferring GCS / Google Chat. The Configure flow no longer offers `.env.example` placeholders as defaults.
+- `.env.example` is now minimal by default (local storage, no notifications) with the cloud and SMTP blocks commented out, so a fresh copy doesn't look pre-configured.
+
+### Added
+- Clear error when an unset or invalid storage provider is selected.
+
+---
+
 ## [0.1.0] - 2026-05-26
 
 ### Added
@@ -21,4 +34,5 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.1.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.1.1
 [0.1.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.1.0

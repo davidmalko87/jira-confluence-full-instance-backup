@@ -23,7 +23,7 @@ SPEC = [
     ("product_name_template","PRODUCT_NAME_TEMPLATE",            False, naming.DEFAULT_PRODUCT_TEMPLATE),
     ("archive_name_template","ARCHIVE_NAME_TEMPLATE",            False, naming.DEFAULT_ARCHIVE_TEMPLATE),
     ("archive_compression",  "ARCHIVE_COMPRESSION",              False, "5"),
-    ("storage_provider",     "STORAGE_PROVIDER",                 False, "gcs"),
+    ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
     ("gcp_credentials",      "GOOGLE_APPLICATION_CREDENTIALS",   False, ""),
     ("s3_endpoint_url",      "S3_ENDPOINT_URL",                  False, ""),
@@ -31,7 +31,7 @@ SPEC = [
     ("aws_secret_access_key","AWS_SECRET_ACCESS_KEY",            True,  ""),
     ("aws_default_region",   "AWS_DEFAULT_REGION",               False, ""),
     ("azure_conn",           "AZURE_STORAGE_CONNECTION_STRING",  True,  ""),
-    ("notify_channels",      "NOTIFY_CHANNELS",                  False, "google-chat"),
+    ("notify_channels",      "NOTIFY_CHANNELS",                  False, ""),
     ("notify_webhook_url",   "NOTIFY_WEBHOOK_URL",               True,  ""),
     ("smtp_host",            "SMTP_HOST",                        False, ""),
     ("smtp_port",            "SMTP_PORT",                        False, "587"),
@@ -56,7 +56,7 @@ class Config:
     product_name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE
     archive_name_template: str = naming.DEFAULT_ARCHIVE_TEMPLATE
     archive_compression: str = "5"
-    storage_provider: str = "gcs"
+    storage_provider: str = "local"
     storage_dest: str = ""
     gcp_credentials: str = ""
     s3_endpoint_url: str = ""
@@ -64,7 +64,7 @@ class Config:
     aws_secret_access_key: str = ""
     aws_default_region: str = ""
     azure_conn: str = ""
-    notify_channels: str = "google-chat"
+    notify_channels: str = ""
     notify_webhook_url: str = ""
     smtp_host: str = ""
     smtp_port: str = "587"

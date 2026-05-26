@@ -65,7 +65,8 @@ def error(msg: str) -> None:
 
 def prompt(label: str, default: str | None = None, secret: bool = False) -> str:
     if secret:
-        val = getpass.getpass(f"{label}: ")
+        # getpass hides the input on purpose (no echo to screen/scrollback).
+        val = getpass.getpass(f"{label} [input hidden — paste, then Enter]: ")
         return val or (default or "")
     if HAVE_RICH:
         return Prompt.ask(label, default=default or None) or ""
