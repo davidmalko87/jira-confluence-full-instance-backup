@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.4.0] - 2026-05-26
+
+### Added
+- **`PYTHON_BIN`** — point the Jenkins agent at a specific Python interpreter (e.g. a full `python.exe` path) for venv creation, for when `python` isn't on the Jenkins service account's PATH. Set it in Configure / carried to Jenkins as a global env var.
+
+### Changed
+- The Jenkins venv setup **auto-detects the interpreter** — `python3`/`python` on Linux, `python`/`py` on Windows — so most agents need no `PYTHON_BIN` at all.
+
+---
+
 ## [0.3.0] - 2026-05-26
 
 ### Added
@@ -66,6 +76,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.4.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.4.0
 [0.3.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.3.0
 [0.2.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.2.0
 [0.1.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.1.1

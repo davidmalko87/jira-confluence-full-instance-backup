@@ -289,6 +289,10 @@ def do_configure(cfg: config.Config) -> None:
     cfg.backup_cron = ui.prompt(
         "Jenkins schedule (cron) — e.g. 'H 2 * * 4' = Thursday ~02:00",
         cfg.backup_cron or "H 2 * * 4")
+    cfg.python_bin = ui.prompt(
+        "Python executable for the Jenkins agent (blank = auto-detect; set a full "
+        "path like C:\\...\\python.exe if 'python' isn't on the service PATH)",
+        _pref(cfg.python_bin))
 
     # ── Storage ──
     ui.section("Storage")
