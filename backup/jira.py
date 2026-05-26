@@ -15,6 +15,7 @@ import base64
 import binascii
 import json
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -25,19 +26,21 @@ import requests
 from . import naming, ui
 
 
-# Cookies actually required by Atlassian. Everything else in the captured
-# cookie blob (ajs_anonymous_id, intercom-*, lastViewedForm-*, theme prefs)
-# is tracking noise.
+# Cookies the backup endpoint actually needs. Only the auth + XSRF cookies are
+# universally required. JSESSIONID / AWSALB / AWSALBCORS are servlet / load-balancer
+# cookies that SOME instances set and others don't — they are forwarded if present
+# but not required (an instance that truly needs them will 403 at request time,
+# which is handled). Everything else in the blob (ajs_*, intercom-*, theme prefs,
+# consent tokens) is noise but harmless — all cookies are sent through as-is.
 REQUIRED_COOKIES = [
-    "tenant.session.token",   # JWT, ~30 day lifetime — the critical one
+    "tenant.session.token",   # JWT auth — the critical one, ~30 day lifetime
     "atlassian.xsrf.token",   # XSRF protection
-    "JSESSIONID",             # Servlet session
-    "AWSALB",                 # LB sticky routing
-    "AWSALBCORS",
 ]
+# Forwarded automatically when present; not all instances use them.
+OPTIONAL_COOKIES = ["JSESSIONID", "AWSALB", "AWSALBCORS"]
 
 USER_AGENT = (
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
 )
 
@@ -56,6 +59,25 @@ def cookies_from_blob(blob: str) -> dict:
 
 def missing_cookies(cookies: dict) -> list[str]:
     return [c for c in REQUIRED_COOKIES if c not in cookies]
+
+
+# Pull the cookie string out of a pasted "Copy as cURL" command or a raw
+# "Cookie:" request header, so the user can paste the whole thing.
+_CURL_COOKIE_RE = re.compile(r"(?:-b|--cookie)\s+(['\"])(?P<v>.*?)\1", re.DOTALL)
+_HEADER_COOKIE_RE = re.compile(r"[Cc]ookie:\s*(?P<v>[^'\"\r\n]+)")
+
+
+def extract_cookie_blob(text: str) -> str:
+    """Accept a full cURL command, a 'Cookie:' header, or an already-clean
+    blob, and return the bare 'name=value; ...' cookie string."""
+    t = (text or "").strip()
+    m = _CURL_COOKIE_RE.search(t)
+    if m:
+        return m.group("v").strip()
+    m = _HEADER_COOKIE_RE.search(t)
+    if m:
+        return m.group("v").strip().rstrip(";").strip()
+    return t
 
 
 def parse_cookie_blob(blob: str) -> dict:
@@ -88,16 +110,32 @@ def session_token_days_left(cookies: dict) -> float | None:
     return (exp - time.time()) / 86400
 
 
-def ui_headers(site: str) -> dict:
-    """Headers Atlassian's auth gate requires to recognize the request as UI-originated."""
-    return {
+def ui_headers(site: str, *, for_get: bool = False) -> dict:
+    """
+    Headers that make the request look browser-originated to Atlassian's UI-only
+    gate. POST (runbackup) sends Origin + Content-Type; GET requests (a browser
+    XHR) send neither — sending them on a GET can trip the gate.
+    """
+    headers = {
         "Accept": "application/json, text/javascript, */*; q=0.01",
+        "Accept-Language": "en-US,en;q=0.9",
         "Content-Type": "application/json",
         "Origin": site,
         "Referer": f"{site}/secure/admin/CloudExport.jspa",
         "X-Requested-With": "XMLHttpRequest",
+        "X-Atlassian-Token": "no-check",
         "User-Agent": USER_AGENT,
+        "sec-ch-ua": '"Chromium";v="148", "Google Chrome";v="148", "Not/A)Brand";v="99"',
+        "sec-ch-ua-mobile": "?0",
+        "sec-ch-ua-platform": '"Windows"',
+        "sec-fetch-dest": "empty",
+        "sec-fetch-mode": "cors",
+        "sec-fetch-site": "same-origin",
     }
+    if for_get:
+        headers.pop("Content-Type", None)
+        headers.pop("Origin", None)
+    return headers
 
 
 def trigger_backup(site: str, cookies: dict) -> dict | None:
@@ -141,7 +179,7 @@ def trigger_backup(site: str, cookies: dict) -> dict | None:
 def get_last_task_id(site: str, cookies: dict) -> str | None:
     """Fallback if runbackup response doesn't include task ID directly."""
     url = f"{site}/rest/backup/1/export/lastTaskId"
-    resp = requests.get(url, headers=ui_headers(site), cookies=cookies, timeout=30)
+    resp = requests.get(url, headers=ui_headers(site, for_get=True), cookies=cookies, timeout=30)
     if resp.status_code != 200:
         return None
     return resp.text.strip().strip('"') or None
@@ -154,8 +192,7 @@ def poll_progress(site: str, cookies: dict, task_id: str,
     Returns final response dict when backup is complete.
     """
     url = f"{site}/rest/backup/1/export/getProgress"
-    headers = ui_headers(site)
-    headers.pop("Content-Type", None)  # GET request
+    headers = ui_headers(site, for_get=True)
 
     deadline = time.time() + timeout_sec
     poll_count = 0
@@ -234,15 +271,25 @@ def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
 
     try:
         resp = requests.get(f"{site}/rest/backup/1/export/lastTaskId",
-                            headers=ui_headers(site), cookies=cookies, timeout=30)
+                            headers=ui_headers(site, for_get=True), cookies=cookies,
+                            timeout=30)
     except requests.RequestException as exc:
         return False, f"Request failed: {exc}"
 
-    if resp.status_code == 200:
-        return True, f"Jira cookies valid (HTTP 200){note}"
+    # 200 = a prior task id is returned; 204 = authenticated but no backup run
+    # yet (no last task). Both mean the cookies are valid.
+    if resp.status_code in (200, 204):
+        extra = " — no previous backup task yet" if resp.status_code == 204 else ""
+        return True, f"Jira cookies valid (HTTP {resp.status_code}{extra}){note}"
+
+    body = " ".join((resp.text or "").split())[:200]
+    if "only accessible from the UI" in (resp.text or ""):
+        return False, (f"HTTP {resp.status_code}: Atlassian's UI-only gate rejected the "
+                       f"request (not a cookie problem){note} — body: {body}")
     if resp.status_code in (401, 403):
-        return False, f"Cookies rejected (HTTP {resp.status_code}) — refresh needed{note}"
-    return False, f"Unexpected HTTP {resp.status_code}{note}"
+        return False, (f"HTTP {resp.status_code} — likely expired/invalid cookies{note}; "
+                       f"body: {body}")
+    return False, f"Unexpected HTTP {resp.status_code}{note} — body: {body}"
 
 
 def run_backup(site: str, cookies: dict, out_dir: Path,

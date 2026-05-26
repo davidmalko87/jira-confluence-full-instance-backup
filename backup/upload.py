@@ -25,6 +25,7 @@ Credentials come from env vars bound by Jenkins withCredentials — never args:
 import argparse
 import shutil
 import sys
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import NoReturn
@@ -107,6 +108,51 @@ BACKENDS = {
     "azure": upload_azure,
     "local": upload_local,
 }
+
+
+def test_storage(provider: str, dest: str, *, endpoint_url: str | None = None,
+                 region: str | None = None) -> tuple[bool, str]:
+    """
+    Verify storage is reachable and WRITABLE without needing an archive.
+      local : create the folder + write & delete a probe file (no residue).
+      cloud : upload a tiny marker to <dest>/_connection-test/<ts>.txt — proves
+              credentials + bucket/container + write permission. The marker is
+              left in place (a write-only key like GCS objectCreator can't delete
+              it); a bucket lifecycle rule cleans it up.
+    Returns (ok, message). Never raises.
+    """
+    if provider not in BACKENDS:
+        return False, f"unknown provider '{provider}' (choose {', '.join(sorted(BACKENDS))})"
+    if not dest:
+        return False, "destination not set (STORAGE_DEST)"
+
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+    if provider == "local":
+        target = Path(dest)
+        try:
+            target.mkdir(parents=True, exist_ok=True)
+            probe = target / f".conn-test-{stamp}"
+            probe.write_text("ok", encoding="utf-8")
+            probe.unlink()
+        except OSError as exc:
+            return False, f"cannot write to '{dest}': {exc}"
+        return True, f"local path writable: {target.resolve()}"
+
+    key = f"_connection-test/{stamp}.txt"
+    tmp = Path(tempfile.gettempdir()) / f"conn-test-{stamp}.txt"
+    tmp.write_text("connection test", encoding="utf-8")
+    try:
+        BACKENDS[provider](dest, tmp, key, endpoint_url=endpoint_url, region=region)
+        return True, (f"write OK -> {provider}:{dest}/{key} "
+                      f"(left a tiny marker; lifecycle rule will remove it)")
+    except SystemExit:                       # _missing_sdk → SystemExit
+        return False, (f"the {provider} SDK isn't installed "
+                       f"(pip install -r requirements-{provider}.txt)")
+    except Exception as exc:                 # auth / bucket / permission error
+        return False, f"write failed: {exc}"
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 def run_upload(provider: str, dest: str, in_dir: Path, *,
