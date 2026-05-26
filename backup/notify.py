@@ -52,7 +52,7 @@ class BackupReport:
         ]
         if self.archives:
             lines.append("Archives:")
-            lines += [f"  • {l}" for l in self.archive_lines()]
+            lines += [f"  • {ln}" for ln in self.archive_lines()]
         else:
             lines.append("Archives: (none found)")
         if self.build_url:

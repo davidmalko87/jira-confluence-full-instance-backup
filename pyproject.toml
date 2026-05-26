@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "jira-confluence-full-instance-backup"
+dynamic = ["version"]
+description = "Full-instance backup of Jira & Confluence Cloud (Standard plan) to pluggable cloud storage"
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "David Malko", email = "davidmalko87@gmail.com" }]
+requires-python = ">=3.10"
+keywords = ["jira", "confluence", "backup", "atlassian", "atlassian-cloud", "jenkins", "gcs", "s3", "azure"]
+dependencies = [
+    "requests>=2.31",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Archiving :: Backup",
+    "Topic :: Utilities",
+]
+
+[project.optional-dependencies]
+gcs = ["google-cloud-storage>=2.14"]
+s3 = ["boto3>=1.34"]
+azure = ["azure-storage-blob>=12.19"]
+ui = ["rich>=13.0"]
+all = [
+    "google-cloud-storage>=2.14",
+    "boto3>=1.34",
+    "azure-storage-blob>=12.19",
+    "rich>=13.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/davidmalko87/jira-confluence-full-instance-backup"
+Repository = "https://github.com/davidmalko87/jira-confluence-full-instance-backup"
+Changelog = "https://github.com/davidmalko87/jira-confluence-full-instance-backup/blob/master/CHANGELOG.md"
+"Bug Tracker" = "https://github.com/davidmalko87/jira-confluence-full-instance-backup/issues"
+
+[project.scripts]
+jira-confluence-backup = "backup.cli:main"
+
+[tool.setuptools]
+packages = ["backup"]
+
+[tool.setuptools.dynamic]
+version = { attr = "backup.__version__" }
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"

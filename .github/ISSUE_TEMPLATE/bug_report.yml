@@ -1,0 +1,56 @@
+name: Bug report
+description: Report a problem with the backup pipeline or CLI
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! **Never paste real cookies, API tokens, or secrets.**
+        Redact site URLs and credentials before submitting.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what occurred instead?
+      placeholder: e.g. Jira stage exits 2 even though cookies were just refreshed.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. python main.py --backup jira ...
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - Jira backup (cookies)
+        - Confluence backup (OBM)
+        - Archive (7z)
+        - Upload (gcs/s3/azure/local)
+        - Notify
+        - CLI / menu
+        - Jenkins pipeline
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version / commit
+      placeholder: "0.1.0 or git SHA"
+  - type: textarea
+    id: env
+    attributes:
+      label: Environment
+      placeholder: OS, Python version, storage provider, run mode (Jenkins vs local)
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log output (redacted)
+      render: shell

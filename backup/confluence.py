@@ -26,7 +26,6 @@ import base64
 import os
 import sys
 import time
-from datetime import datetime, timezone
 from pathlib import Path
 
 import requests
@@ -59,7 +58,7 @@ def trigger_backup(site: str, auth_header: str) -> dict:
     resp = requests.post(url, headers=headers, json=body, timeout=60)
 
     if resp.status_code == 406:
-        print(f"[INFO] runbackup returned 406 (cosmetic, backup started anyway)")
+        print("[INFO] runbackup returned 406 (cosmetic, backup started anyway)")
         return {}
 
     if resp.status_code >= 400:
