@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.11.2] - 2026-05-27
+
+### Changed
+- **`docs/RESTORE.md`: Jira restore verified + corrected.** A backup produced by this tool was confirmed to import cleanly into Jira Cloud (Atlassian's importer validated it — "everything looks good" — read the correct source/timestamp, and ran to completion). Corrected the earlier note that wrongly implied importing over an existing site is restricted: Jira's Cloud import **overwrites** existing data (users/groups merge), and works into a populated site. Added the large-instance data/media split guidance (`.xml` ≤ 20 GB) and the Free-plan user cap.
+
+---
+
 ## [0.11.1] - 2026-05-27
 
 ### Fixed
@@ -220,6 +227,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.11.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.2
 [0.11.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.1
 [0.11.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.0
 [0.10.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.1
