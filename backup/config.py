@@ -27,6 +27,11 @@ SPEC = [
     ("poll_timeout",         "POLL_TIMEOUT",                     False, "21600"),
     ("failure_policy",       "FAILURE_POLICY",                   False, "balanced"),
     ("jira_cooldown_action", "JIRA_COOLDOWN_ACTION",             False, "skip"),
+    ("on_cooldown",          "ON_COOLDOWN",                      False, "default"),
+    ("on_credentials",       "ON_CREDENTIALS",                   False, "default"),
+    ("on_backup_error",      "ON_BACKUP_ERROR",                  False, "default"),
+    ("on_no_backup",         "ON_NO_BACKUP",                     False, "default"),
+    ("on_upload_failure",    "ON_UPLOAD_FAILURE",                False, "default"),
     ("python_bin",           "PYTHON_BIN",                       False, ""),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
@@ -65,6 +70,11 @@ class Config:
     poll_timeout: str = "21600"
     failure_policy: str = "balanced"
     jira_cooldown_action: str = "skip"
+    on_cooldown: str = "default"
+    on_credentials: str = "default"
+    on_backup_error: str = "default"
+    on_no_backup: str = "default"
+    on_upload_failure: str = "default"
     python_bin: str = ""
     storage_provider: str = "local"
     storage_dest: str = ""

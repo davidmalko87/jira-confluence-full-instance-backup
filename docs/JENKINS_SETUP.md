@@ -287,6 +287,24 @@ a code identifying its outcome, and the pipeline applies your chosen
 - **resilient** — never abort; always do as much as possible and mark UNSTABLE.
 - **strict** — any imperfection fails the build.
 
+**Full control — per-outcome overrides.** When a preset isn't quite right, each
+outcome has its own override parameter (and matching env var) that takes
+precedence over the preset:
+
+| Parameter | Overrides |
+|---|---|
+| `ON_COOLDOWN` | the 48h cooldown |
+| `ON_CREDENTIALS` | expired / rejected credentials |
+| `ON_BACKUP_ERROR` | a backup error or timeout |
+| `ON_NO_BACKUP` | no product produced a backup |
+| `ON_UPLOAD_FAILURE` | an upload-target failure |
+
+Each is one of `default` (follow the preset), `continue` (stay green), `unstable`,
+or `abort`. Example: run `resilient` but still hard-fail on dead cookies →
+`FAILURE_POLICY=resilient` + `ON_CREDENTIALS=abort`. Set them per-run in *Build
+with Parameters*, or persist them in `.env` (the export carries any non-`default`
+override into a Jenkins global env var).
+
 **Other knobs:**
 
 - `JIRA_COOLDOWN_ACTION` — on the 48h cooldown, `skip` Jira (default) or

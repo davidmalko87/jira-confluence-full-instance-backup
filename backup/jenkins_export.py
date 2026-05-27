@@ -166,6 +166,18 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
             env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
             summary.append(f"global env {key} = {val}")
 
+    # Per-outcome policy overrides — only emit the ones actually customized, so a
+    # global env var exists only when the operator wants a persistent override
+    # (otherwise the build parameter defaults to 'default' = follow the preset).
+    for key, val in (("ON_COOLDOWN", cfg.on_cooldown),
+                     ("ON_CREDENTIALS", cfg.on_credentials),
+                     ("ON_BACKUP_ERROR", cfg.on_backup_error),
+                     ("ON_NO_BACKUP", cfg.on_no_backup),
+                     ("ON_UPLOAD_FAILURE", cfg.on_upload_failure)):
+        if val and val != "default":
+            env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
+            summary.append(f"global env {key} = {val}")
+
     # Per-provider destination env vars — defaults for the Jenkins checkbox dest fields
     # (the Jenkinsfile reassembles STORAGE_DEST from these at build time).
     prov_list = [p.strip() for p in (cfg.storage_provider or "").split(",") if p.strip()]

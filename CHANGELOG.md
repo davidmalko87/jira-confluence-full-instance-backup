@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.9.0] - 2026-05-27
+
+### Added
+- **Per-outcome policy overrides (full control)** — on top of the `FAILURE_POLICY` presets, each outcome now has its own override parameter: `ON_COOLDOWN`, `ON_CREDENTIALS`, `ON_BACKUP_ERROR`, `ON_NO_BACKUP`, `ON_UPLOAD_FAILURE`. Each is `default` (follow the preset), `continue` (stay green), `unstable`, or `abort`, and takes precedence over the preset for that single outcome. Example: `FAILURE_POLICY=resilient` + `ON_CREDENTIALS=abort` = "keep going on everything except dead credentials." Settable per-run in *Build with Parameters* or persisted in `.env` (the export carries any non-`default` override into a Jenkins global env var).
+
+---
+
 ## [0.8.0] - 2026-05-27
 
 ### Added
@@ -134,6 +141,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.9.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.0
 [0.8.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.8.0
 [0.7.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.7.0
 [0.6.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.6.0
