@@ -43,7 +43,8 @@ different service.
 | `Your default credentials were not found` (gcs) | `GOOGLE_APPLICATION_CREDENTIALS` unset or wrong path | Point it at a valid service-account JSON key |
 
 The bucket/container must exist beforehand — this tool uploads into it, it does
-not create it. Objects are written to `<dest>/YYYY/MM/DD/`.
+not create it. Objects are written to `<dest>/YYYY/MM/` by default (configurable
+via `STORAGE_LAYOUT`).
 
 ## Archive / environment
 
@@ -65,7 +66,7 @@ Full setup: [JENKINS_SETUP.md](JENKINS_SETUP.md).
 
 ## FAQ
 
-- **Where do backups land?** `<provider>:<dest>/YYYY/MM/DD/` — encrypted `.7z` plus a `manifest.json`.
+- **Where do backups land?** `<provider>:<dest>/YYYY/MM/` (configurable via `STORAGE_LAYOUT`) — per-product `.7z` files (`jira-<date>.7z`, `confluence-<date>.7z`) each with a `<stem>.manifest.json`.
 - **How do I verify a backup?** `python main.py --validate` re-checksums the archive against its manifest.
 - **How do I preview without running a real backup?** `python main.py --all --dry-run` (no API calls, no cooldown used).
 - **Can I back up to more than one cloud?** Yes — set comma lists, e.g. `STORAGE_PROVIDER=gcs,s3` + `STORAGE_DEST=bucketA,bucketB`.

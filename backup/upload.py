@@ -12,8 +12,9 @@ Supported providers:
   azure  Azure Blob Storage        (pip install azure-storage-blob)
   local  Copy to a local/mounted directory — no SDK, useful for testing/NAS
 
-Object key layout is identical across providers:
-    <dest>/YYYY/MM/DD/<archive>.7z
+Object key layout is identical across providers (date folder via STORAGE_LAYOUT
+/ --layout: year-month [default], year, year-month-day, or flat):
+    <dest>/YYYY/MM/<archive>.7z
 
 Credentials come from env vars bound by Jenkins withCredentials — never args:
   gcs    GOOGLE_APPLICATION_CREDENTIALS  (path to SA JSON key)
@@ -23,6 +24,7 @@ Credentials come from env vars bound by Jenkins withCredentials — never args:
   local  none
 """
 import argparse
+import os
 import shutil
 import sys
 import tempfile
@@ -155,26 +157,35 @@ def test_storage(provider: str, dest: str, *, endpoint_url: str | None = None,
         tmp.unlink(missing_ok=True)
 
 
-def run_upload(provider: str, dest: str, in_dir: Path, *,
+_LAYOUTS = {
+    "year": "%Y",
+    "year-month": "%Y/%m",
+    "year-month-day": "%Y/%m/%d",
+    "flat": "",
+}
+
+
+def _layout_prefix(layout: str) -> str:
+    """Date-folder prefix for the object key (no trailing slash; '' = bucket root)."""
+    fmt = _LAYOUTS.get(layout, _LAYOUTS["year-month"])
+    return datetime.now(timezone.utc).strftime(fmt) if fmt else ""
+
+
+def run_upload(provider: str, dest: str, in_dir: Path, *, prefix: str = "",
                endpoint_url: str | None = None, region: str | None = None) -> list[str]:
-    """Upload all *.7z in in_dir to <provider>:<dest>/YYYY/MM/DD/. Returns keys."""
+    """Upload every *.7z (and every manifest *.json) in in_dir to <provider>:<dest>/<prefix>/."""
     archives = sorted(in_dir.glob("*.7z"))
     if not archives:
         raise RuntimeError(f"No .7z files found in {in_dir}")
 
     backend = BACKENDS[provider]
-    date_prefix = datetime.now(timezone.utc).strftime("%Y/%m/%d")
-
-    # Upload the manifest alongside the archives so the cloud copy is
-    # self-describing and verifiable.
-    to_upload = list(archives)
-    mani = in_dir / "manifest.json"
-    if mani.exists():
-        to_upload.append(mani)
+    # Upload the manifest(s) alongside the archives so each stored archive is
+    # self-describing (combined manifest.json and/or per-product <stem>.manifest.json).
+    to_upload = list(archives) + sorted(in_dir.glob("*.json"))
 
     keys, total = [], 0
     for item in to_upload:
-        key = f"{date_prefix}/{item.name}"
+        key = f"{prefix}/{item.name}" if prefix else item.name
         ui.info(f"Uploading {item.name} -> {provider}:{dest}/{key}")
         size = backend(dest, item, key, endpoint_url=endpoint_url, region=region)
         total += size
@@ -207,7 +218,7 @@ def parse_targets(provider_csv: str, dest_csv: str) -> list[tuple[str, str]]:
     return list(zip(providers, dests))
 
 
-def run_upload_multi(provider_csv: str, dest_csv: str, in_dir: Path, *,
+def run_upload_multi(provider_csv: str, dest_csv: str, in_dir: Path, *, prefix: str = "",
                      endpoint_url: str | None = None, region: str | None = None) -> list[str]:
     """
     Upload the archives to every provider:dest target — best effort.
@@ -224,7 +235,7 @@ def run_upload_multi(provider_csv: str, dest_csv: str, in_dir: Path, *,
         if len(targets) > 1:
             ui.section(f"-> {provider}:{dest}")
         try:
-            keys += run_upload(provider, dest, in_dir,
+            keys += run_upload(provider, dest, in_dir, prefix=prefix,
                                endpoint_url=endpoint_url, region=region)
         except Exception as exc:  # noqa: BLE001 — keep trying the remaining targets
             ui.error(f"Upload to {provider}:{dest} failed: {exc}")
@@ -250,6 +261,10 @@ def main():
     parser.add_argument("--endpoint-url", default=None,
                         help="S3-compatible endpoint (R2/B2/MinIO/Spaces). s3 only.")
     parser.add_argument("--region", default=None, help="Region. s3 only.")
+    parser.add_argument("--layout", default=os.environ.get("STORAGE_LAYOUT", "year-month"),
+                        choices=list(_LAYOUTS),
+                        help="Date-folder depth for object keys (default year-month). "
+                             "Env: STORAGE_LAYOUT")
     args = parser.parse_args()
 
     if not args.in_dir.exists():
@@ -257,6 +272,7 @@ def main():
 
     try:
         run_upload_multi(args.provider, args.dest, args.in_dir,
+                         prefix=_layout_prefix(args.layout),
                          endpoint_url=args.endpoint_url, region=args.region)
     except RuntimeError as exc:
         sys.exit(str(exc))

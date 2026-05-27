@@ -13,7 +13,8 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-MANIFEST_NAME = "manifest.json"
+MANIFEST_NAME = "manifest.json"          # combined-mode manifest
+MANIFEST_SUFFIX = ".manifest.json"       # per-product: <archive-stem>.manifest.json
 SCHEMA_VERSION = 1
 _PRODUCTS = ("jira", "confluence")
 
@@ -30,31 +31,41 @@ def _entry(path: Path) -> dict:
     return {"name": path.name, "size": path.stat().st_size, "sha256": sha256_file(path)}
 
 
-def build(source_dir: Path, archive_path: Path, *, site: str = "") -> dict:
-    """Build a manifest describing the source files and the encrypted archive."""
-    sources = [_entry(f) for f in sorted(source_dir.glob("*"))
-               if f.is_file() and f.name != MANIFEST_NAME]
-    blob = " ".join(s["name"].lower() for s in sources)
+def _is_manifest(path: Path) -> bool:
+    return path.name == MANIFEST_NAME or path.name.endswith(MANIFEST_SUFFIX)
+
+
+def build_files(sources: list[Path], archive_path: Path, *, site: str = "") -> dict:
+    """Build a manifest describing an explicit list of source files + the archive."""
+    entries = [_entry(f) for f in sources]
+    blob = " ".join(e["name"].lower() for e in entries)
     products = [p for p in _PRODUCTS if p in blob]
     return {
         "schema": SCHEMA_VERSION,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "site": site,
         "products": products,
-        "sources": sources,
+        "sources": entries,
         "archive": _entry(archive_path),
         "complete": True,
     }
 
 
-def write(manifest: dict, archive_dir: Path) -> Path:
-    path = archive_dir / MANIFEST_NAME
+def build(source_dir: Path, archive_path: Path, *, site: str = "") -> dict:
+    """Build a manifest for the combined archive (all source files in a dir)."""
+    sources = [f for f in sorted(source_dir.glob("*"))
+               if f.is_file() and not _is_manifest(f)]
+    return build_files(sources, archive_path, site=site)
+
+
+def write(manifest: dict, archive_dir: Path, name: str = MANIFEST_NAME) -> Path:
+    path = archive_dir / name
     path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     return path
 
 
-def read(archive_dir: Path) -> dict | None:
-    path = archive_dir / MANIFEST_NAME
+def read(archive_dir: Path, name: str = MANIFEST_NAME) -> dict | None:
+    path = archive_dir / name
     if not path.exists():
         return None
     try:
@@ -63,37 +74,61 @@ def read(archive_dir: Path) -> dict | None:
         return None
 
 
-def validate(archive_dir: Path) -> tuple[bool, list[str]]:
-    """Verify the archive in archive_dir against its manifest (sha256)."""
-    man = read(archive_dir)
-    if not man:
-        return False, ["No manifest.json found — backup incomplete or missing"]
+def manifest_paths(archive_dir: Path) -> list[Path]:
+    """All manifest files in archive_dir: combined manifest.json + per-product ones."""
+    if not archive_dir.exists():
+        return []
+    paths = [p for p in sorted(archive_dir.glob("*.json")) if _is_manifest(p)]
+    return paths
 
+
+def read_all(archive_dir: Path) -> list[dict]:
+    """Parse every manifest in archive_dir (combined and/or per-product)."""
+    out = []
+    for p in manifest_paths(archive_dir):
+        try:
+            out.append(json.loads(p.read_text(encoding="utf-8")))
+        except (ValueError, OSError):
+            pass
+    return out
+
+
+def _validate_one(archive_dir: Path, man: dict) -> list[str]:
     issues = []
-    if not man.get("complete"):
-        issues.append("manifest is marked incomplete")
-
     arch = man.get("archive") or {}
     name = arch.get("name", "")
     target = archive_dir / name
+    if not man.get("complete"):
+        issues.append(f"{name or '(unnamed)'}: manifest marked incomplete")
     if not name or not target.exists():
         issues.append(f"archive file missing: {name or '(unnamed)'}")
     elif target.stat().st_size != arch.get("size"):
         issues.append(f"size mismatch for {name}")
     elif sha256_file(target) != arch.get("sha256"):
         issues.append(f"sha256 mismatch for {name} — archive corrupt")
+    return issues
 
+
+def validate(archive_dir: Path) -> tuple[bool, list[str]]:
+    """Verify every archive in archive_dir against its manifest(s) (sha256)."""
+    mans = read_all(archive_dir)
+    if not mans:
+        return False, ["No manifest found — backup incomplete or missing"]
+    issues = []
+    for man in mans:
+        issues += _validate_one(archive_dir, man)
     return (not issues), issues
 
 
 def has_complete_today(archive_dir: Path, product: str) -> bool:
     """True if a complete backup for `product` was already made today."""
-    man = read(archive_dir)
-    if not man or not man.get("complete"):
-        return False
-    created = (man.get("created_utc") or "")[:10]
     today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    return created == today and product in man.get("products", [])
+    for man in read_all(archive_dir):
+        if (man.get("complete")
+                and (man.get("created_utc") or "")[:10] == today
+                and product in man.get("products", [])):
+            return True
+    return False
 
 
 def cleanup(out_dir: Path, archive_dir: Path, keep_days: int | None = None) -> list[str]:
@@ -105,8 +140,9 @@ def cleanup(out_dir: Path, archive_dir: Path, keep_days: int | None = None) -> l
     Returns the list of removed paths.
     """
     removed: list[str] = []
-    man = read(archive_dir)
-    referenced = {man["archive"]["name"]} if man and man.get("archive") else set()
+    mans = read_all(archive_dir)
+    referenced = {m["archive"]["name"] for m in mans if m.get("archive", {}).get("name")}
+    any_complete = any(m.get("complete") for m in mans)
 
     if archive_dir.exists():
         for f in sorted(archive_dir.glob("*.7z")):
@@ -114,7 +150,7 @@ def cleanup(out_dir: Path, archive_dir: Path, keep_days: int | None = None) -> l
                 f.unlink()
                 removed.append(str(f))
 
-    if man and man.get("complete") and out_dir.exists():
+    if any_complete and out_dir.exists():
         for f in sorted(out_dir.glob("*")):
             if f.is_file():
                 f.unlink()

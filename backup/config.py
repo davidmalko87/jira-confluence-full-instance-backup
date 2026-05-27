@@ -23,6 +23,7 @@ SPEC = [
     ("product_name_template","PRODUCT_NAME_TEMPLATE",            False, naming.DEFAULT_PRODUCT_TEMPLATE),
     ("archive_name_template","ARCHIVE_NAME_TEMPLATE",            False, naming.DEFAULT_ARCHIVE_TEMPLATE),
     ("archive_compression",  "ARCHIVE_COMPRESSION",              False, "5"),
+    ("archive_mode",         "ARCHIVE_MODE",                     False, "per-product"),
     ("backup_cron",          "BACKUP_CRON",                      False, "H 2 * * 4"),
     ("poll_timeout",         "POLL_TIMEOUT",                     False, "21600"),
     ("failure_policy",       "FAILURE_POLICY",                   False, "balanced"),
@@ -35,6 +36,7 @@ SPEC = [
     ("python_bin",           "PYTHON_BIN",                       False, ""),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
+    ("storage_layout",       "STORAGE_LAYOUT",                   False, "year-month"),
     ("gcp_credentials",      "GOOGLE_APPLICATION_CREDENTIALS",   False, ""),
     ("s3_endpoint_url",      "S3_ENDPOINT_URL",                  False, ""),
     ("aws_access_key_id",    "AWS_ACCESS_KEY_ID",                True,  ""),
@@ -66,6 +68,7 @@ class Config:
     product_name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE
     archive_name_template: str = naming.DEFAULT_ARCHIVE_TEMPLATE
     archive_compression: str = "5"
+    archive_mode: str = "per-product"
     backup_cron: str = "H 2 * * 4"
     poll_timeout: str = "21600"
     failure_policy: str = "balanced"
@@ -78,6 +81,7 @@ class Config:
     python_bin: str = ""
     storage_provider: str = "local"
     storage_dest: str = ""
+    storage_layout: str = "year-month"
     gcp_credentials: str = ""
     s3_endpoint_url: str = ""
     aws_access_key_id: str = ""

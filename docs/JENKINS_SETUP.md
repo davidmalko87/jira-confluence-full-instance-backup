@@ -213,7 +213,7 @@ plugin (Manage Jenkins → Plugins). Click a build → **Console Output** for de
 
 | Outcome | Meaning |
 |---|---|
-| ✅ all stages green | backup landed in your store under `YYYY/MM/DD/` |
+| ✅ all stages green | backup landed in your store under `YYYY/MM/` (per-product `.7z` + manifest) |
 | ⚠️ Jira logs `[COOLDOWN]` / exits 0 with marker | Atlassian's 48-hour throttle — auth worked; retry after 48h |
 | ❌ Jira exit code 2 | cookies expired/invalid → [refresh](#cookie-refresh) |
 | ❌ Confluence `401/403` | wrong email or API token |
