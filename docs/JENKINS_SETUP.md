@@ -125,7 +125,7 @@ This turns your already-working local config into Jenkins credentials + the job.
    `python main.py` → **9) Test connections** to confirm Jira / Confluence /
    storage all pass.
 2. **Generate the setup script**:
-   `python main.py` → **13) Export Jenkins setup** (or `python main.py --export-jenkins`).
+   `python main.py` → **15) Export Jenkins setup** (or `python main.py --export-jenkins`).
    This writes a **gitignored** `jenkins-setup.groovy`.
 3. **Import into Jenkins**: Manage Jenkins → **Script Console** → paste the file's
    contents → **Run**. It creates every credential (with the exact IDs) **and**

@@ -454,15 +454,19 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
             ("Storage", f"{cfg.storage_provider}:{cfg.storage_dest or '(not set)'}"),
             ("Notify",  cfg.notify_channels or "(none)"),
         ])
-        print("  1) Backup Jira          7) Validate backup")
-        print("  2) Backup Confluence    8) Cleanup backups")
-        print("  3) Backup both          9) Test connections")
-        print("  4) Full run            10) Configure credentials")
-        print("  5) Archive ./out       11) Show configuration")
-        print("  6) Upload ./archive    12) List local backups")
-        print(" 15) Fetch existing      13) Export Jenkins setup")
-        print("     Jira backup         14) Refresh Jira cookies")
-        print("  0) Exit")
+        print("  Backup")
+        print("     1) Jira          2) Confluence     3) Both")
+        print("     4) Full run (backup -> archive -> upload -> notify)")
+        print("     5) Fetch existing Jira backup (no new trigger)")
+        print("  Pipeline steps")
+        print("     6) Archive ./out      7) Upload ./archive")
+        print("  Verify & manage")
+        print("     8) Test connections   9) Validate backup")
+        print("    10) Cleanup backups   11) List local backups")
+        print("  Configuration")
+        print("    12) Show config       13) Configure credentials")
+        print("    14) Refresh cookies   15) Export Jenkins setup")
+        print("     0) Exit")
         choice = ui.prompt("Select").strip()
 
         if choice == "1":
@@ -474,27 +478,27 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
         elif choice == "4":
             _safe(full_run, cfg, out_dir, archive_dir, True)
         elif choice == "5":
-            _safe(do_archive, cfg, out_dir, archive_dir)
+            _safe(do_backup, cfg, ["jira"], out_dir, archive_dir, download_existing=True)
         elif choice == "6":
-            _safe(do_upload, cfg, archive_dir)
+            _safe(do_archive, cfg, out_dir, archive_dir)
         elif choice == "7":
-            _safe(do_validate, archive_dir)
+            _safe(do_upload, cfg, archive_dir)
         elif choice == "8":
-            _safe(_menu_cleanup, out_dir, archive_dir)
-        elif choice == "9":
             _safe(do_test, cfg)
+        elif choice == "9":
+            _safe(do_validate, archive_dir)
         elif choice == "10":
-            _safe(do_configure, cfg)
+            _safe(_menu_cleanup, out_dir, archive_dir)
         elif choice == "11":
-            _safe(do_show, cfg)
-        elif choice == "12":
             _safe(do_list, out_dir, archive_dir)
+        elif choice == "12":
+            _safe(do_show, cfg)
         elif choice == "13":
-            _safe(do_export_jenkins, cfg)
+            _safe(do_configure, cfg)
         elif choice == "14":
             _safe(do_refresh_cookies, cfg)
         elif choice == "15":
-            _safe(do_backup, cfg, ["jira"], out_dir, archive_dir, download_existing=True)
+            _safe(do_export_jenkins, cfg)
         elif choice in ("0", "q", "exit", "quit"):
             return
         else:

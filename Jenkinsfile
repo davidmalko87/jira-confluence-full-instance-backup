@@ -141,19 +141,21 @@ def policyFor(String outcome) {
     if (outcome == 'success') { return 'ok' }
 
     // First: a per-outcome override wins when set to something other than 'default'.
+    // These read the env values RESOLVED in the Setup stage (param > configured
+    // global env > literal default) — see resolvePolicy().
     def override = [
-        cooldown:    params.ON_COOLDOWN,
-        credentials: params.ON_CREDENTIALS,
-        error:       params.ON_BACKUP_ERROR,
-        nobackup:    params.ON_NO_BACKUP,
-        upload:      params.ON_UPLOAD_FAILURE,
+        cooldown:    env.ON_COOLDOWN,
+        credentials: env.ON_CREDENTIALS,
+        error:       env.ON_BACKUP_ERROR,
+        nobackup:    env.ON_NO_BACKUP,
+        upload:      env.ON_UPLOAD_FAILURE,
     ].get(outcome)
     if (override && override != 'default') {
         return (override == 'continue') ? 'ok' : override   // 'unstable' / 'abort' pass through
     }
 
     // Otherwise: fall back to the FAILURE_POLICY preset.
-    def preset = params.FAILURE_POLICY ?: 'balanced'
+    def preset = env.FAILURE_POLICY ?: 'balanced'
     if (preset == 'resilient') { return 'unstable' }
     if (preset == 'strict')    { return 'abort' }
     // balanced
@@ -161,12 +163,21 @@ def policyFor(String outcome) {
     return 'abort'   // credentials, error, nobackup
 }
 
+// Resolve a policy setting: an explicit non-default build-parameter pick wins;
+// otherwise the export-configured global env var; otherwise the literal default.
+// (Declarative parameters can't compute defaults from env, so we resolve here —
+// this is also what lets a CRON build honour the configured global env values.)
+def resolvePolicy(String paramVal, String dflt, String envVal) {
+    if (paramVal && paramVal != dflt) { return paramVal }
+    return (envVal?.trim()) ? envVal : dflt
+}
+
 // Classify a backup module's exit code, then apply the failure policy.
 //   exit 0 = success · 2 = credentials · 3 = cooldown/no-backup · else = error
 def runBackup(String product, String cmd) {
     int code = runStatus(cmd)
     def outcome = [0: 'success', 2: 'credentials', 3: 'cooldown'].get(code, 'error')
-    def preset = params.FAILURE_POLICY ?: 'balanced'
+    def preset = env.FAILURE_POLICY ?: 'balanced'
     def action = policyFor(outcome)
     echo "[${product}] exit=${code} outcome=${outcome} policy=${preset} -> ${action}"
     if (action == 'abort') {
@@ -196,35 +207,34 @@ pipeline {
 
     // Editable per run via "Build with Parameters"; defaults come from the global
     // env vars set by jenkins-setup.groovy.
+    // NOTE: Declarative `parameters` only accepts LITERAL values here — no method
+    // calls or env-expressions (that fails to compile). Env-driven defaults are
+    // resolved in the Setup stage instead (resolvePolicy + the storage/notify
+    // fallbacks). A choice's default is its FIRST listed value.
     parameters {
         // --- Failure policy: how the pipeline reacts to each outcome ---
         choice(name: 'FAILURE_POLICY',
-               choices: ([(env.FAILURE_POLICY ?: 'balanced')] + ['balanced', 'resilient', 'strict']).unique(),
+               choices: ['balanced', 'resilient', 'strict'],
                description: 'balanced = hard-fail on expired credentials / backup error / no-backup, ' +
                             'but keep going (UNSTABLE) on cooldown + upload-target failures. ' +
-                            'resilient = never abort, only mark UNSTABLE. strict = abort on any problem.')
+                            'resilient = never abort, only mark UNSTABLE. strict = abort on any problem. ' +
+                            '(Leave on balanced to honour the value configured in Jenkins global env.)')
         choice(name: 'JIRA_COOLDOWN_ACTION',
-               choices: ([(env.JIRA_COOLDOWN_ACTION ?: 'skip')] + ['skip', 'download-existing']).unique(),
+               choices: ['skip', 'download-existing'],
                description: 'On the Jira 48h cooldown: skip Jira (mark unstable), or download the ' +
                             'most recent existing backup instead.')
 
-        // --- Advanced: per-outcome overrides. Leave 'default' to follow the
-        //     FAILURE_POLICY preset above; set continue / unstable / abort to
-        //     control that one outcome regardless of the preset. ---
-        choice(name: 'ON_COOLDOWN',
-               choices: ([(env.ON_COOLDOWN ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+        // --- Advanced: per-outcome overrides. 'default' = follow the preset above;
+        //     continue / unstable / abort overrides that one outcome. ---
+        choice(name: 'ON_COOLDOWN',       choices: ['default', 'continue', 'unstable', 'abort'],
                description: 'Override for the Jira 48h cooldown outcome')
-        choice(name: 'ON_CREDENTIALS',
-               choices: ([(env.ON_CREDENTIALS ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+        choice(name: 'ON_CREDENTIALS',    choices: ['default', 'continue', 'unstable', 'abort'],
                description: 'Override for expired/rejected credentials (Jira cookies or Confluence token)')
-        choice(name: 'ON_BACKUP_ERROR',
-               choices: ([(env.ON_BACKUP_ERROR ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+        choice(name: 'ON_BACKUP_ERROR',   choices: ['default', 'continue', 'unstable', 'abort'],
                description: 'Override for a backup error or timeout')
-        choice(name: 'ON_NO_BACKUP',
-               choices: ([(env.ON_NO_BACKUP ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+        choice(name: 'ON_NO_BACKUP',      choices: ['default', 'continue', 'unstable', 'abort'],
                description: 'Override for when NO product produced a backup this run')
-        choice(name: 'ON_UPLOAD_FAILURE',
-               choices: ([(env.ON_UPLOAD_FAILURE ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+        choice(name: 'ON_UPLOAD_FAILURE', choices: ['default', 'continue', 'unstable', 'abort'],
                description: 'Override for an upload-target failure')
 
         // --- What to back up (untick to skip a product entirely) ---
@@ -236,45 +246,40 @@ pipeline {
                      description: 'Jira: do not trigger a new backup — download the most recent ' +
                                   'existing one (use on cooldown / reruns)')
 
-        // --- Storage targets: tick a box per backend, fill its destination below it.
-        //     Defaults come from the global env vars set by jenkins-setup.groovy. ---
-        booleanParam(name: 'STORE_GCS', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('gcs'),
+        // --- Storage targets: tick a box per backend and fill its destination.
+        //     Leave ALL unticked to use the storage configured in Jenkins global
+        //     env (set by jenkins-setup.groovy); the dest fields prefill from it. ---
+        booleanParam(name: 'STORE_GCS', defaultValue: false,
                      description: 'Upload to Google Cloud Storage')
         string(name: 'GCS_BUCKET', defaultValue: "${env.GCS_BUCKET ?: ''}",
                description: 'GCS bucket name (used when GCS is ticked)')
-        booleanParam(name: 'STORE_S3', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('s3'),
+        booleanParam(name: 'STORE_S3', defaultValue: false,
                      description: 'Upload to AWS S3 / S3-compatible (R2 / B2 / MinIO / Spaces)')
         string(name: 'S3_BUCKET', defaultValue: "${env.S3_BUCKET ?: ''}",
                description: 'S3 bucket name (used when S3 is ticked)')
         string(name: 'S3_ENDPOINT_URL', defaultValue: "${env.S3_ENDPOINT_URL ?: ''}",
                description: 'S3-compatible endpoint (R2 / B2 / MinIO / Spaces); blank for AWS')
-        booleanParam(name: 'STORE_AZURE', defaultValue: (env.STORAGE_PROVIDER ?: '').contains('azure'),
+        booleanParam(name: 'STORE_AZURE', defaultValue: false,
                      description: 'Upload to Azure Blob Storage')
         string(name: 'AZURE_CONTAINER', defaultValue: "${env.AZURE_CONTAINER ?: ''}",
                description: 'Azure container name (used when Azure is ticked)')
-        booleanParam(name: 'STORE_LOCAL', defaultValue: (env.STORAGE_PROVIDER ?: 'local').contains('local'),
+        booleanParam(name: 'STORE_LOCAL', defaultValue: false,
                      description: 'Copy to a local / mounted directory on the agent')
         string(name: 'LOCAL_PATH', defaultValue: "${env.LOCAL_PATH ?: ''}",
                description: 'Local directory (used when Local is ticked; blank = build archive dir)')
 
-        // --- Notifications: tick every channel you want a report sent to. ---
-        booleanParam(name: 'NOTIFY_GOOGLE_CHAT', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('google-chat'),
-                     description: 'Google Chat')
-        booleanParam(name: 'NOTIFY_SLACK', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('slack'),
-                     description: 'Slack')
-        booleanParam(name: 'NOTIFY_DISCORD', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('discord'),
-                     description: 'Discord')
-        booleanParam(name: 'NOTIFY_TEAMS', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('teams'),
-                     description: 'Microsoft Teams')
-        booleanParam(name: 'NOTIFY_EMAIL', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('email'),
-                     description: 'Email (SMTP)')
-        booleanParam(name: 'NOTIFY_WEBHOOK', defaultValue: (env.NOTIFY_CHANNELS ?: '').contains('webhook'),
-                     description: 'Generic webhook')
+        // --- Notifications: tick channels to override the configured set; leave
+        //     ALL unticked to use the channels configured in Jenkins global env. ---
+        booleanParam(name: 'NOTIFY_GOOGLE_CHAT', defaultValue: false, description: 'Google Chat')
+        booleanParam(name: 'NOTIFY_SLACK',   defaultValue: false, description: 'Slack')
+        booleanParam(name: 'NOTIFY_DISCORD', defaultValue: false, description: 'Discord')
+        booleanParam(name: 'NOTIFY_TEAMS',   defaultValue: false, description: 'Microsoft Teams')
+        booleanParam(name: 'NOTIFY_EMAIL',   defaultValue: false, description: 'Email (SMTP)')
+        booleanParam(name: 'NOTIFY_WEBHOOK', defaultValue: false, description: 'Generic webhook')
 
         // --- Archive + timing ---
-        choice(name: 'ARCHIVE_COMPRESSION',
-               choices: ([(env.ARCHIVE_COMPRESSION ?: '5')] + ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9']).unique(),
-               description: '7-Zip compression: 0 (store) - 9 (ultra)')
+        choice(name: 'ARCHIVE_COMPRESSION', choices: ['5', '0', '1', '2', '3', '4', '6', '7', '8', '9'],
+               description: '7-Zip compression: 0 (store) - 9 (ultra); default 5')
         string(name: 'PRODUCT_NAME_TEMPLATE', defaultValue: "${env.PRODUCT_NAME_TEMPLATE ?: '{product}-{date}'}",
                description: 'Tokens: {product}{site}{date}{time}{datetime}{timestamp}')
         string(name: 'ARCHIVE_NAME_TEMPLATE', defaultValue: "${env.ARCHIVE_NAME_TEMPLATE ?: 'atlassian-backup-{date}'}",
@@ -298,24 +303,28 @@ pipeline {
                     // Sites come from global env (rarely change); fall back to placeholders.
                     env.SITE_JIRA       = env.SITE_JIRA       ?: 'https://<YOUR_SITE>.atlassian.net'
                     env.SITE_CONFLUENCE = env.SITE_CONFLUENCE ?: 'https://<YOUR_SITE>.atlassian.net/wiki'
-                    // Run-time settings come from build parameters (whose defaults are
-                    // the global env vars set by jenkins-setup.groovy).
-                    //
                     // Assemble aligned STORAGE_PROVIDER / STORAGE_DEST comma lists from
-                    // the per-backend checkboxes + their destination fields, so the
-                    // Python upload layer keeps receiving the contract it expects.
+                    // the per-backend checkboxes. If NO box is ticked, keep the storage
+                    // configured in global env (set by the export); only fall back to a
+                    // local copy when nothing is configured either — so a backup is
+                    // never silently skipped.
                     def provs = []
                     def dests = []
                     if (params.STORE_GCS)   { provs << 'gcs';   dests << (params.GCS_BUCKET ?: '') }
                     if (params.STORE_S3)    { provs << 's3';    dests << (params.S3_BUCKET ?: '') }
                     if (params.STORE_AZURE) { provs << 'azure'; dests << (params.AZURE_CONTAINER ?: '') }
                     if (params.STORE_LOCAL) { provs << 'local'; dests << (params.LOCAL_PATH?.trim() ? params.LOCAL_PATH : env.ARCHIVE_DIR) }
-                    if (provs.isEmpty())    { provs << 'local'; dests << env.ARCHIVE_DIR }  // safety net: never silently skip upload
-                    env.STORAGE_PROVIDER = provs.join(',')
-                    env.STORAGE_DEST     = dests.join(',')
-                    env.S3_ENDPOINT_URL  = params.S3_ENDPOINT_URL
+                    if (!provs.isEmpty()) {
+                        env.STORAGE_PROVIDER = provs.join(',')
+                        env.STORAGE_DEST     = dests.join(',')
+                    } else if (!(env.STORAGE_PROVIDER?.trim())) {
+                        env.STORAGE_PROVIDER = 'local'
+                        env.STORAGE_DEST     = env.ARCHIVE_DIR
+                    }   // else: use the global-env STORAGE_PROVIDER/STORAGE_DEST as-is
+                    if (params.S3_ENDPOINT_URL?.trim()) { env.S3_ENDPOINT_URL = params.S3_ENDPOINT_URL }
 
-                    // Notification channels from the per-channel checkboxes.
+                    // Notification channels: ticked boxes override; if none ticked,
+                    // keep the channels configured in global env.
                     def chans = []
                     if (params.NOTIFY_GOOGLE_CHAT) chans << 'google-chat'
                     if (params.NOTIFY_SLACK)       chans << 'slack'
@@ -323,15 +332,23 @@ pipeline {
                     if (params.NOTIFY_TEAMS)       chans << 'teams'
                     if (params.NOTIFY_EMAIL)       chans << 'email'
                     if (params.NOTIFY_WEBHOOK)     chans << 'webhook'
-                    env.NOTIFY_CHANNELS = chans.join(',')
+                    if (!chans.isEmpty()) { env.NOTIFY_CHANNELS = chans.join(',') }
 
+                    // GString-default params already carry the configured global env
+                    // value, so a straight assignment is correct here.
                     env.PRODUCT_NAME_TEMPLATE = params.PRODUCT_NAME_TEMPLATE
                     env.ARCHIVE_NAME_TEMPLATE = params.ARCHIVE_NAME_TEMPLATE
-                    env.ARCHIVE_COMPRESSION   = params.ARCHIVE_COMPRESSION
                     env.POLL_TIMEOUT          = params.POLL_TIMEOUT
-                    // Failure policy + cooldown action drive how outcomes are handled.
-                    env.FAILURE_POLICY        = params.FAILURE_POLICY
-                    env.JIRA_COOLDOWN_ACTION  = params.JIRA_COOLDOWN_ACTION
+                    // Literal-default params: a non-default pick wins, else keep the
+                    // configured global env (so CRON builds honour it), else the default.
+                    env.ARCHIVE_COMPRESSION  = resolvePolicy(params.ARCHIVE_COMPRESSION, '5', env.ARCHIVE_COMPRESSION)
+                    env.FAILURE_POLICY       = resolvePolicy(params.FAILURE_POLICY, 'balanced', env.FAILURE_POLICY)
+                    env.JIRA_COOLDOWN_ACTION = resolvePolicy(params.JIRA_COOLDOWN_ACTION, 'skip', env.JIRA_COOLDOWN_ACTION)
+                    env.ON_COOLDOWN          = resolvePolicy(params.ON_COOLDOWN, 'default', env.ON_COOLDOWN)
+                    env.ON_CREDENTIALS       = resolvePolicy(params.ON_CREDENTIALS, 'default', env.ON_CREDENTIALS)
+                    env.ON_BACKUP_ERROR      = resolvePolicy(params.ON_BACKUP_ERROR, 'default', env.ON_BACKUP_ERROR)
+                    env.ON_NO_BACKUP         = resolvePolicy(params.ON_NO_BACKUP, 'default', env.ON_NO_BACKUP)
+                    env.ON_UPLOAD_FAILURE    = resolvePolicy(params.ON_UPLOAD_FAILURE, 'default', env.ON_UPLOAD_FAILURE)
                     echo "Config: jira=${env.SITE_JIRA} storage=${env.STORAGE_PROVIDER}:" +
                          "${env.STORAGE_DEST} notify=${env.NOTIFY_CHANNELS ?: '(none)'} " +
                          "policy=${env.FAILURE_POLICY} cooldown=${env.JIRA_COOLDOWN_ACTION}"

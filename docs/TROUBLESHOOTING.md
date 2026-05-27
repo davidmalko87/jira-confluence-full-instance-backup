@@ -58,7 +58,7 @@ not create it. Objects are written to `<dest>/YYYY/MM/DD/`.
 | Symptom | Cause | Fix |
 |---|---|---|
 | `Cannot run program "sh"` on Windows | Old Linux-only Jenkinsfile | Use v0.2.0+ (cross-platform Jenkinsfile) |
-| `Could not find credentials entry '...'` | Credential missing or wrong ID | Run **Export Jenkins setup** (option 13) → Script Console, or add the credential with the exact ID |
+| `Could not find credentials entry '...'` | Credential missing or wrong ID | Run **Export Jenkins setup** (option 15) → Script Console, or add the credential with the exact ID |
 | Job uses placeholder site/bucket | Non-secret config not set | Re-run the export (it sets Jenkins global env vars), or set them in *Manage Jenkins → System* |
 
 Full setup: [JENKINS_SETUP.md](JENKINS_SETUP.md).
