@@ -310,6 +310,7 @@ jira-confluence-full-instance-backup/
 ├── requirements.txt          # Core (requests)
 ├── requirements-{gcs,s3,azure,ui}.txt   # Optional extras
 ├── docs/JENKINS_SETUP.md     # Full Jenkins setup guide
+├── docs/RESTORE.md           # How to restore a backup (per product)
 └── backup/
     ├── cli.py                # Dual-mode entrypoint (menu + CLI)
     ├── jira.py               # Cookie-authenticated Jira backup
@@ -343,6 +344,13 @@ Run **Test connections** (menu option 8) first — it pinpoints which of Jira /
 Confluence / storage is misconfigured. Common errors and fixes (403 vs the 204
 "success", cookie refresh, the 48-hour cooldown, storage permissions, Jenkins)
 are in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
+
+## Restoring
+
+Restore is manual (via Atlassian's import UI) and has product-specific paths and
+Cloud limitations — notably, a Cloud site with **both** Jira and Confluence can't
+do a full Confluence site import and must restore space-by-space. See
+**[docs/RESTORE.md](docs/RESTORE.md)**.
 
 ---
 

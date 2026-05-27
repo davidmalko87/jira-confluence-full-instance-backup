@@ -20,13 +20,17 @@ SCHEMA_VERSION = 1
 _PRODUCTS = ("jira", "confluence")
 
 
-# Entries that mark a genuine Atlassian site export, so we never archive/upload
-# (and later try to restore) an HTML error page or a truncated download.
-#   Jira Cloud export  : entities.xml + activeobjects.xml
-#   Confluence export  : entities.xml + exportDescriptor.properties
+# Entries that mark a genuine export, so we never archive/upload (and later try
+# to restore) an HTML error page or a truncated download. The PRIMARY guarantee
+# is "a real, non-corrupt, multi-file ZIP" (an error/login page isn't one).
+# Markers below are a secondary product sniff:
+#   Jira Cloud export        : entities.xml + activeobjects.xml
+#   Confluence Cloud backup  : Site_Backup.zip is a MULTI-FILE ZIP and does NOT
+#       use a top-level entities.xml (that's the Server/DC XML-backup format),
+#       so we don't require a specific entry for it.
 _EXPORT_MARKERS = {
     "jira": ("entities.xml", "activeobjects.xml"),
-    "confluence": ("entities.xml", "exportDescriptor.properties"),
+    "confluence": (),
 }
 
 
@@ -36,7 +40,7 @@ def verify_export(zip_path: Path, product: str) -> tuple[bool, str]:
 
     Returns (ok, message). ok=False means the file is clearly NOT a backup (not a
     ZIP / empty / corrupt) and the caller should fail. ok=True with a message that
-    starts "WARNING:" means it IS a ZIP but is missing the entries Atlassian's
+    starts "WARNING:" means it IS a ZIP but is missing the entries that product's
     import expects — surfaced so you find out now, not at restore time.
     """
     if not zipfile.is_zipfile(zip_path):
@@ -60,12 +64,12 @@ def verify_export(zip_path: Path, product: str) -> tuple[bool, str]:
 
     markers = _EXPORT_MARKERS.get(product, ())
     basenames = {n.rsplit("/", 1)[-1] for n in names}
-    missing = [m for m in markers if m not in basenames]
-    if "entities.xml" in missing:
-        return True, (f"WARNING: valid ZIP but no entities.xml among {len(names)} "
-                      f"entries — may be rejected on import as a {product} backup")
     found = [m for m in markers if m in basenames]
-    return True, f"valid {product} export ({len(names)} entries; found {found})"
+    if markers and not found:
+        return True, (f"WARNING: valid ZIP but none of the expected {product} entries "
+                      f"{markers} among {len(names)} entries — verify it imports")
+    detail = f"found {found}" if found else f"{len(names)} entries"
+    return True, f"valid {product} export ({detail})"
 
 
 def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
