@@ -89,8 +89,12 @@ def _prompt_jira_cookies(cfg: config.Config) -> None:
 
 def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
               archive_dir: Path, *, skip_existing: bool = False,
-              dry_run: bool = False) -> list[str]:
-    """Run the requested product backups. Returns list of products that failed."""
+              dry_run: bool = False, download_existing: bool = False) -> list[str]:
+    """Run the requested product backups. Returns list of products that failed.
+
+    `download_existing` (Jira only) skips triggering a new backup and downloads
+    the most recent existing one — useful on cooldown / reruns.
+    """
     out_dir.mkdir(parents=True, exist_ok=True)
     errors = []
 
@@ -111,7 +115,10 @@ def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
                 # Confluence backup (mirrors the independent Jenkins stages).
                 try:
                     jira.run_backup(cfg.site_jira, cookies, out_dir,
-                                    name_template=cfg.product_name_template)
+                                    name_template=cfg.product_name_template,
+                                    poll_timeout=int(cfg.poll_timeout or 21600),
+                                    download_existing=download_existing,
+                                    cooldown_action=cfg.jira_cooldown_action)
                 except (Exception, SystemExit) as exc:  # noqa: BLE001
                     ui.error(f"Jira backup failed: {exc}")
                     errors.append("jira")
@@ -453,8 +460,8 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
         print("  4) Full run            10) Configure credentials")
         print("  5) Archive ./out       11) Show configuration")
         print("  6) Upload ./archive    12) List local backups")
-        print("                         13) Export Jenkins setup")
-        print("                         14) Refresh Jira cookies")
+        print(" 15) Fetch existing      13) Export Jenkins setup")
+        print("     Jira backup         14) Refresh Jira cookies")
         print("  0) Exit")
         choice = ui.prompt("Select").strip()
 
@@ -486,6 +493,8 @@ def menu(cfg: config.Config, out_dir: Path, archive_dir: Path) -> None:
             _safe(do_export_jenkins, cfg)
         elif choice == "14":
             _safe(do_refresh_cookies, cfg)
+        elif choice == "15":
+            _safe(do_backup, cfg, ["jira"], out_dir, archive_dir, download_existing=True)
         elif choice in ("0", "q", "exit", "quit"):
             return
         else:
@@ -513,6 +522,9 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Preview steps without API calls / archiving / uploading")
     p.add_argument("--skip-existing", action="store_true",
                    help="Skip a product that already has a complete backup today")
+    p.add_argument("--download-existing", action="store_true",
+                   help="Jira: download the most recent existing backup instead of "
+                        "triggering a new one (useful on cooldown / reruns)")
     p.add_argument("--compression", type=int, choices=range(0, 10), metavar="0-9",
                    default=None, help="7z compression level 0-9 (overrides config)")
     p.add_argument("--no-encrypt", action="store_true",
@@ -576,7 +588,8 @@ def main(argv: list[str] | None = None) -> int:
             products = (["jira", "confluence"] if args.backup.strip() == "all"
                         else [x.strip() for x in args.backup.split(",") if x.strip()])
             errors = do_backup(cfg, products, args.out, args.archive_dir,
-                               skip_existing=args.skip_existing, dry_run=args.dry_run)
+                               skip_existing=args.skip_existing, dry_run=args.dry_run,
+                               download_existing=args.download_existing)
             if errors:
                 raise RuntimeError(f"backup failed: {', '.join(errors)}")
         if args.archive:

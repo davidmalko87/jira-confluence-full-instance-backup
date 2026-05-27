@@ -255,21 +255,52 @@ The pipeline assembles the underlying `STORAGE_PROVIDER` / `STORAGE_DEST` /
 `NOTIFY_CHANNELS` values from the ticked boxes at build time. The export creates
 the credentials for every provider you had configured.
 
-**Resilience — the stages are independent.** A Jira failure (expired cookies, an
-error) or the 48h cooldown does **not** abort the rest of the pipeline:
+### Failure policy — you control what stops the build
 
-- The Jira and Confluence stages fail *softly* — a problem in one marks the
-  build **UNSTABLE** (yellow) and the pipeline continues. Whatever backup did
-  succeed is still archived and uploaded.
-- On the Jira **48h cooldown**, the run can't trigger a fresh backup, so it
-  downloads the **most recent existing** Jira backup (still retained by
-  Atlassian) and ships that instead — so a rerun isn't wasted.
-- **Archive and Upload are skipped** only when *no* product produced a backup
-  `.zip` (the build is marked UNSTABLE) — a cooldown marker alone never creates
-  an empty upload.
+The Jira and Confluence stages are **independent**: each backup module exits with
+a code identifying its outcome, and the pipeline applies your chosen
+`FAILURE_POLICY` to decide whether that outcome continues or stops the build.
 
-So to recover a run where Jira failed: just **Rerun** (or Build with Parameters
-→ tick `JIRA_DOWNLOAD_EXISTING`); Confluence + archive + upload proceed normally.
+**Outcomes and their exit codes** (per product):
+
+| Exit | Outcome | Meaning |
+|------|---------|---------|
+| 0 | success | a backup was produced |
+| 2 | credentials | cookies / API token rejected — needs a human |
+| 3 | cooldown / no-backup | 48h cooldown, nothing downloaded |
+| 1 | error / timeout | network, schema, download, or timeout |
+
+**Presets** (`FAILURE_POLICY` build parameter / global env var):
+
+| Outcome | `balanced` (default) | `resilient` | `strict` |
+|---|---|---|---|
+| success | continue | continue | continue |
+| cooldown | **UNSTABLE**, continue | UNSTABLE | **abort** |
+| credentials expired | **abort** | UNSTABLE | abort |
+| backup error / timeout | **abort** | UNSTABLE | abort |
+| no backup at all | **abort** | UNSTABLE | abort |
+| upload-target failure | **UNSTABLE**, continue | UNSTABLE | abort |
+
+- **balanced** — stop on the things a human must act on (dead credentials, a real
+  error, or nothing backed up), but ride through cooldowns and partial upload
+  failures with an UNSTABLE (yellow) build.
+- **resilient** — never abort; always do as much as possible and mark UNSTABLE.
+- **strict** — any imperfection fails the build.
+
+**Other knobs:**
+
+- `JIRA_COOLDOWN_ACTION` — on the 48h cooldown, `skip` Jira (default) or
+  `download-existing` (ship the most recent existing backup instead).
+- `JIRA_DOWNLOAD_EXISTING` — for a rerun: don't trigger, just fetch the latest
+  existing Jira backup.
+- **Uploads are best-effort** — with several storage targets, a failure on one
+  doesn't stop the others; every reachable target still gets the archive.
+- **Archive/Upload run** whenever *any* product produced a backup `.zip`; a
+  cooldown marker alone never creates an empty upload.
+
+So to recover a failed Jira run: **Rerun** (the policy decides severity), or set
+`JIRA_COOLDOWN_ACTION=download-existing` / tick `JIRA_DOWNLOAD_EXISTING` to ship
+the existing backup while Confluence + archive + upload proceed normally.
 
 ---
 
