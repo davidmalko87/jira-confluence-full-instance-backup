@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.11.0] - 2026-05-27
+
+### Added
+- **Downloaded backups are verified before they're stored** — `manifest.verify_export()` opens each freshly-downloaded export and confirms it's a real Atlassian backup ZIP (valid, non-empty, no corrupt entries) containing the entries import expects (`entities.xml` + `activeobjects.xml` for Jira; `entities.xml` + `exportDescriptor.properties` for Confluence). If the download is **not a ZIP** (e.g. an HTML error/login page or a truncated file), the stage **fails loudly** instead of archiving and uploading garbage that would only be rejected at restore time. A valid ZIP that's missing `entities.xml` logs a **WARNING** (surfaced now, not at restore). The Jira and Confluence stages run this check right after download (covers fresh and cooldown→existing downloads).
+
+---
+
 ## [0.10.1] - 2026-05-27
 
 ### Added
@@ -203,6 +210,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.11.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.0
 [0.10.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.1
 [0.10.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.0
 [0.9.4]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.4

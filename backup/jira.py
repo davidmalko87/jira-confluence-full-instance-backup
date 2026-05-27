@@ -23,7 +23,7 @@ from pathlib import Path
 
 import requests
 
-from . import naming, ui
+from . import manifest, naming, ui
 
 
 # Cookies the backup endpoint actually needs. Only the auth + XSRF cookies are
@@ -334,6 +334,10 @@ def _download_from_task(site: str, cookies: dict, final: dict, out_dir: Path,
         raise RuntimeError(f"No export file UUID in completion response: {final}")
     out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
     size = download_backup(site, cookies, file_id, out_path, show_progress=True)
+    ok, msg = manifest.verify_export(out_path, "jira")
+    if not ok:
+        raise RuntimeError(f"Downloaded Jira backup is invalid: {msg}")
+    (ui.warn if msg.startswith("WARNING") else ui.ok)(f"Jira export check: {msg}")
     ui.ok(f"Jira backup{label}: {out_path} ({size / (1024 * 1024):.1f} MB)")
     return out_path
 

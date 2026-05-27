@@ -30,7 +30,7 @@ from pathlib import Path
 
 import requests
 
-from . import naming, ui
+from . import manifest, naming, ui
 
 
 # A browser-like UA + explicit JSON Accept: some Atlassian Cloud endpoints return
@@ -248,6 +248,10 @@ def run_backup(site: str, email: str, token: str, out_dir: Path,
     out_path = out_dir / naming.render_name(name_template, "confluence",
                                             ext=".zip", site=site)
     size = download_backup(site, auth_header, file_name, out_path, show_progress=True)
+    ok, msg = manifest.verify_export(out_path, "confluence")
+    if not ok:
+        raise RuntimeError(f"Downloaded Confluence backup is invalid: {msg}")
+    (ui.warn if msg.startswith("WARNING") else ui.ok)(f"Confluence export check: {msg}")
     ui.ok(f"Confluence backup: {out_path} ({size / (1024 * 1024):.1f} MB)")
     return out_path
 
