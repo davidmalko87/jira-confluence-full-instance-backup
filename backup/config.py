@@ -25,6 +25,8 @@ SPEC = [
     ("archive_compression",  "ARCHIVE_COMPRESSION",              False, "5"),
     ("backup_cron",          "BACKUP_CRON",                      False, "H 2 * * 4"),
     ("poll_timeout",         "POLL_TIMEOUT",                     False, "21600"),
+    ("failure_policy",       "FAILURE_POLICY",                   False, "balanced"),
+    ("jira_cooldown_action", "JIRA_COOLDOWN_ACTION",             False, "skip"),
     ("python_bin",           "PYTHON_BIN",                       False, ""),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
@@ -61,6 +63,8 @@ class Config:
     archive_compression: str = "5"
     backup_cron: str = "H 2 * * 4"
     poll_timeout: str = "21600"
+    failure_policy: str = "balanced"
+    jira_cooldown_action: str = "skip"
     python_bin: str = ""
     storage_provider: str = "local"
     storage_dest: str = ""

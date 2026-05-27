@@ -357,15 +357,20 @@ def fetch_existing_backup(site: str, cookies: dict, out_dir: Path,
 def run_backup(site: str, cookies: dict, out_dir: Path,
                name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
                poll_timeout: int = 21600,
-               download_existing: bool = False) -> Path | None:
+               download_existing: bool = False,
+               cooldown_action: str = "skip") -> Path | None:
     """
     Full trigger→poll→download flow. Returns the .zip path, or None when there is
-    nothing to download (cooldown with no prior backup).
+    nothing to download (cooldown that was skipped, or no existing backup found).
 
-    On 48h cooldown a NEW backup is blocked, so we fall back to downloading the
-    most recent EXISTING backup — that way a (re)run still ships a Jira archive
-    and the pipeline can continue. `download_existing=True` skips the trigger
-    entirely and only fetches the latest existing backup.
+    On the 48h cooldown a NEW backup is blocked. `cooldown_action` decides what
+    happens then:
+      - "skip" (default): write a marker and return None (the pipeline policy
+        decides whether that is a soft skip or a failure).
+      - "download-existing": download the most recent EXISTING backup so the
+        (re)run still ships a Jira archive.
+    `download_existing=True` skips the trigger entirely and only fetches the
+    latest existing backup (handy for reruns).
     """
     out_dir.mkdir(parents=True, exist_ok=True)
 
@@ -379,17 +384,20 @@ def run_backup(site: str, cookies: dict, out_dir: Path,
     trigger_result = trigger_backup(site, cookies)
 
     if trigger_result is None:
-        ui.warn("Jira backup on 48h cooldown — falling back to the most recent existing backup")
-        existing = fetch_existing_backup(site, cookies, out_dir,
-                                         name_template=name_template,
-                                         poll_timeout=poll_timeout)
-        if existing is None:
-            marker = out_dir / "jira_cooldown.txt"
-            marker.write_text(
-                f"Cooldown active at {datetime.now(timezone.utc).isoformat()}; "
-                f"no existing backup available to download\n")
-            ui.warn("Cooldown active and no existing backup to download — Jira skipped")
-        return existing
+        if cooldown_action == "download-existing":
+            ui.warn("Jira backup on 48h cooldown — downloading the most recent existing backup")
+            existing = fetch_existing_backup(site, cookies, out_dir,
+                                             name_template=name_template,
+                                             poll_timeout=poll_timeout)
+            if existing is not None:
+                return existing
+            ui.warn("No existing backup available to download")
+        marker = out_dir / "jira_cooldown.txt"
+        marker.write_text(
+            f"Cooldown active at {datetime.now(timezone.utc).isoformat()}; "
+            f"action={cooldown_action}\n")
+        ui.warn("Jira skipped — 48h cooldown active")
+        return None
 
     # Extract task ID — field name varies across endpoint versions.
     task_id = (trigger_result.get("taskId") or
@@ -432,19 +440,33 @@ def main():
                         help="Skip triggering a new backup; download the most recent "
                              "existing Jira backup (useful on cooldown / reruns). "
                              "Env: JIRA_DOWNLOAD_EXISTING=true")
+    parser.add_argument("--cooldown-action",
+                        choices=["skip", "download-existing"],
+                        default=os.environ.get("JIRA_COOLDOWN_ACTION", "skip"),
+                        help="On the 48h cooldown: 'skip' (default) or "
+                             "'download-existing'. Env: JIRA_COOLDOWN_ACTION")
     args = parser.parse_args()
 
     cookie_blob = os.environ.get("JIRA_COOKIES")
     if not cookie_blob:
         sys.exit("JIRA_COOKIES env var not set — bind via Jenkins withCredentials")
 
-    cookies = parse_cookie_blob(cookie_blob)
+    # Exit codes are a contract with the pipeline's failure policy:
+    #   0 backup produced · 1 error/timeout · 2 credentials expired · 3 cooldown/no-backup
+    cookies = parse_cookie_blob(cookie_blob)   # exits 2 if required cookies absent
     try:
-        run_backup(args.site, cookies, args.out,
-                   name_template=args.name_template, poll_timeout=args.poll_timeout,
-                   download_existing=args.download_existing)
-    except (RuntimeError, ValueError) as exc:
-        sys.exit(str(exc))
+        result = run_backup(args.site, cookies, args.out,
+                            name_template=args.name_template,
+                            poll_timeout=args.poll_timeout,
+                            download_existing=args.download_existing,
+                            cooldown_action=args.cooldown_action)
+    except TimeoutError as exc:
+        sys.exit(f"Timed out waiting for backup: {exc}")          # exit 1
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        sys.exit(str(exc))                                        # exit 1
+    if result is None:
+        print("[INFO] No Jira backup produced (cooldown / nothing to download)")
+        sys.exit(3)
 
 
 if __name__ == "__main__":

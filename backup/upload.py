@@ -209,13 +209,33 @@ def parse_targets(provider_csv: str, dest_csv: str) -> list[tuple[str, str]]:
 
 def run_upload_multi(provider_csv: str, dest_csv: str, in_dir: Path, *,
                      endpoint_url: str | None = None, region: str | None = None) -> list[str]:
-    """Upload the archives to every provider:dest target."""
+    """
+    Upload the archives to every provider:dest target — best effort.
+
+    A failure on one target does NOT stop the others (so a backup still lands in
+    every reachable store). If any target failed, raises at the end listing them
+    so the caller can exit non-zero; the pipeline's upload policy decides whether
+    that fails the build or only marks it unstable.
+    """
     targets = parse_targets(provider_csv, dest_csv)
     keys: list[str] = []
+    failures: list[tuple[str, str, str]] = []
     for provider, dest in targets:
         if len(targets) > 1:
             ui.section(f"-> {provider}:{dest}")
-        keys += run_upload(provider, dest, in_dir, endpoint_url=endpoint_url, region=region)
+        try:
+            keys += run_upload(provider, dest, in_dir,
+                               endpoint_url=endpoint_url, region=region)
+        except Exception as exc:  # noqa: BLE001 — keep trying the remaining targets
+            ui.error(f"Upload to {provider}:{dest} failed: {exc}")
+            failures.append((provider, dest, str(exc)))
+
+    if failures:
+        ok = len(targets) - len(failures)
+        detail = "; ".join(f"{p}:{d} ({e})" for p, d, e in failures)
+        raise RuntimeError(
+            f"{len(failures)} of {len(targets)} upload target(s) failed "
+            f"({ok} succeeded): {detail}")
     return keys
 
 

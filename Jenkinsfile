@@ -115,6 +115,48 @@ def hasBackups() {
     return powershell(returnStatus: true, script: "${venvPython()} -c \"${py}\"") == 0
 }
 
+// Run a backup module and return its exit code (no exception on non-zero).
+def runStatus(String cmd) {
+    if (isUnix()) {
+        return sh(returnStatus: true, script: "${venvPython()} ${cmd}")
+    }
+    return powershell(returnStatus: true, script: "${venvPython()} ${cmd}")
+}
+
+// ───────────────────────── Failure policy ─────────────────────────
+// Map a stage OUTCOME to an ACTION under the chosen FAILURE_POLICY preset.
+//   outcomes : success | cooldown | credentials | error | nobackup | upload
+//   actions  : 'ok' (continue) | 'unstable' (continue + mark UNSTABLE) | 'abort' (fail now)
+//
+//   strict    : anything that isn't a clean success aborts the build.
+//   resilient : never aborts — every problem only marks the build UNSTABLE.
+//   balanced  : (default) hard-fail on credentials / error / nobackup; soft
+//               (unstable + continue) on cooldown and upload-target failures.
+def policyFor(String outcome) {
+    if (outcome == 'success') { return 'ok' }
+    def preset = params.FAILURE_POLICY ?: 'balanced'
+    if (preset == 'resilient') { return 'unstable' }
+    if (preset == 'strict')    { return 'abort' }
+    // balanced
+    if (outcome == 'cooldown' || outcome == 'upload') { return 'unstable' }
+    return 'abort'   // credentials, error, nobackup
+}
+
+// Classify a backup module's exit code, then apply the failure policy.
+//   exit 0 = success · 2 = credentials · 3 = cooldown/no-backup · else = error
+def runBackup(String product, String cmd) {
+    int code = runStatus(cmd)
+    def outcome = [0: 'success', 2: 'credentials', 3: 'cooldown'].get(code, 'error')
+    def preset = params.FAILURE_POLICY ?: 'balanced'
+    def action = policyFor(outcome)
+    echo "[${product}] exit=${code} outcome=${outcome} policy=${preset} -> ${action}"
+    if (action == 'abort') {
+        error("${product} backup: ${outcome} (exit ${code}) — stopping per '${preset}' policy")
+    } else if (action == 'unstable') {
+        unstable("${product} backup: ${outcome} (exit ${code}) — continuing; build marked UNSTABLE")
+    }
+}
+
 pipeline {
     agent any
 
@@ -136,6 +178,17 @@ pipeline {
     // Editable per run via "Build with Parameters"; defaults come from the global
     // env vars set by jenkins-setup.groovy.
     parameters {
+        // --- Failure policy: how the pipeline reacts to each outcome ---
+        choice(name: 'FAILURE_POLICY',
+               choices: ([(env.FAILURE_POLICY ?: 'balanced')] + ['balanced', 'resilient', 'strict']).unique(),
+               description: 'balanced = hard-fail on expired credentials / backup error / no-backup, ' +
+                            'but keep going (UNSTABLE) on cooldown + upload-target failures. ' +
+                            'resilient = never abort, only mark UNSTABLE. strict = abort on any problem.')
+        choice(name: 'JIRA_COOLDOWN_ACTION',
+               choices: ([(env.JIRA_COOLDOWN_ACTION ?: 'skip')] + ['skip', 'download-existing']).unique(),
+               description: 'On the Jira 48h cooldown: skip Jira (mark unstable), or download the ' +
+                            'most recent existing backup instead.')
+
         // --- What to back up (untick to skip a product entirely) ---
         booleanParam(name: 'BACKUP_JIRA', defaultValue: true,
                      description: 'Run the Jira backup stage')
@@ -238,28 +291,29 @@ pipeline {
                     env.ARCHIVE_NAME_TEMPLATE = params.ARCHIVE_NAME_TEMPLATE
                     env.ARCHIVE_COMPRESSION   = params.ARCHIVE_COMPRESSION
                     env.POLL_TIMEOUT          = params.POLL_TIMEOUT
+                    // Failure policy + cooldown action drive how outcomes are handled.
+                    env.FAILURE_POLICY        = params.FAILURE_POLICY
+                    env.JIRA_COOLDOWN_ACTION  = params.JIRA_COOLDOWN_ACTION
                     echo "Config: jira=${env.SITE_JIRA} storage=${env.STORAGE_PROVIDER}:" +
-                         "${env.STORAGE_DEST} notify=${env.NOTIFY_CHANNELS ?: '(none)'}"
+                         "${env.STORAGE_DEST} notify=${env.NOTIFY_CHANNELS ?: '(none)'} " +
+                         "policy=${env.FAILURE_POLICY} cooldown=${env.JIRA_COOLDOWN_ACTION}"
                     setupVenv()
                 }
             }
         }
 
-        // Jira and Confluence are INDEPENDENT: a failure (or cooldown) in one must
-        // not abort the other or the archive/upload of whatever did succeed.
-        // catchError marks the stage red + the build UNSTABLE, then continues.
+        // Jira and Confluence are INDEPENDENT. Each module exits with a code that
+        // identifies the outcome; runBackup() applies the FAILURE_POLICY preset to
+        // decide whether that outcome continues (UNSTABLE) or aborts the build.
         stage('Jira backup') {
             when { expression { params.BACKUP_JIRA } }
             steps {
-                catchError(message: 'Jira backup failed — continuing with other stages',
-                           buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                    withCredentials([
-                        string(credentialsId: 'jira-cookies', variable: 'JIRA_COOKIES')
-                    ]) {
-                        script {
-                            def extra = params.JIRA_DOWNLOAD_EXISTING ? ' --download-existing' : ''
-                            runPy("-m backup.jira --site \"${SITE_JIRA}\" --out \"${OUT_DIR}\"${extra}")
-                        }
+                withCredentials([
+                    string(credentialsId: 'jira-cookies', variable: 'JIRA_COOKIES')
+                ]) {
+                    script {
+                        def extra = params.JIRA_DOWNLOAD_EXISTING ? ' --download-existing' : ''
+                        runBackup('Jira', "-m backup.jira --site \"${SITE_JIRA}\" --out \"${OUT_DIR}\"${extra}")
                     }
                 }
             }
@@ -268,13 +322,12 @@ pipeline {
         stage('Confluence backup') {
             when { expression { params.BACKUP_CONFLUENCE } }
             steps {
-                catchError(message: 'Confluence backup failed — continuing with other stages',
-                           buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
-                    withCredentials([
-                        string(credentialsId: 'atlassian-email',     variable: 'ATL_EMAIL'),
-                        string(credentialsId: 'atlassian-api-token', variable: 'ATL_TOKEN')
-                    ]) {
-                        script { runPy("-m backup.confluence --site \"${SITE_CONFLUENCE}\" --out \"${OUT_DIR}\"") }
+                withCredentials([
+                    string(credentialsId: 'atlassian-email',     variable: 'ATL_EMAIL'),
+                    string(credentialsId: 'atlassian-api-token', variable: 'ATL_TOKEN')
+                ]) {
+                    script {
+                        runBackup('Confluence', "-m backup.confluence --site \"${SITE_CONFLUENCE}\" --out \"${OUT_DIR}\"")
                     }
                 }
             }
@@ -284,6 +337,10 @@ pipeline {
             steps {
                 script {
                     if (!hasBackups()) {
+                        // "No backup produced" outcome — severity per the policy.
+                        if (policyFor('nobackup') == 'abort') {
+                            error('No Jira or Confluence backup was produced — failing per policy.')
+                        }
                         unstable('No Jira or Confluence backup was produced — skipping Archive and Upload.')
                         return
                     }
@@ -318,10 +375,16 @@ pipeline {
                     def extra = env.S3_ENDPOINT_URL?.trim() ? " --endpoint-url \"${env.S3_ENDPOINT_URL}\"" : ""
                     def cmd = "-m backup.upload --provider \"${env.STORAGE_PROVIDER}\" " +
                               "--dest \"${env.STORAGE_DEST}\"${extra}"
-                    if (creds) {
-                        withCredentials(creds) { runPy(cmd) }
-                    } else {
-                        runPy(cmd)   // local only — no credentials needed
+                    // Best-effort across targets; a non-zero exit means at least one
+                    // target failed -> 'upload' outcome, severity per the policy.
+                    int code = creds ? withCredentials(creds) { runStatus(cmd) } : runStatus(cmd)
+                    if (code != 0) {
+                        def action = policyFor('upload')
+                        echo "[Upload] exit=${code} outcome=upload policy=${params.FAILURE_POLICY ?: 'balanced'} -> ${action}"
+                        if (action == 'abort') {
+                            error("Upload failed (exit ${code}) — stopping per policy")
+                        }
+                        unstable("Upload had target failure(s) (exit ${code}) — continuing; build marked UNSTABLE")
                     }
                 }
             }

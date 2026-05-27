@@ -61,6 +61,14 @@ def trigger_backup(site: str, auth_header: str) -> dict:
         print("[INFO] runbackup returned 406 (cosmetic, backup started anyway)")
         return {}
 
+    # Auth rejected — bad/expired email or API token. Exit 2 = "needs human"
+    # (matches Jira's credentials exit code so the pipeline policy treats both
+    # the same way).
+    if resp.status_code in (401, 403):
+        print(f"[ERROR] Confluence auth rejected (HTTP {resp.status_code}) — check "
+              f"ATL_EMAIL / ATL_TOKEN: {resp.text}", file=sys.stderr)
+        sys.exit(2)
+
     if resp.status_code >= 400:
         print(f"[ERROR] runbackup {resp.status_code}: {resp.text}", file=sys.stderr)
         resp.raise_for_status()
@@ -222,11 +230,14 @@ def main():
     if not email or not token:
         sys.exit("ATL_EMAIL / ATL_TOKEN env vars not set")
 
+    # Exit codes match Jira's contract: 0 success · 1 error/timeout · 2 credentials.
     try:
         run_backup(args.site, email, token, args.out,
                    name_template=args.name_template, poll_timeout=args.poll_timeout)
-    except (RuntimeError, ValueError) as exc:
-        sys.exit(str(exc))
+    except TimeoutError as exc:
+        sys.exit(f"Timed out waiting for backup: {exc}")          # exit 1
+    except (RuntimeError, ValueError, requests.RequestException) as exc:
+        sys.exit(str(exc))                                        # exit 1
 
 
 if __name__ == "__main__":
