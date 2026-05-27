@@ -7,7 +7,9 @@ emoji) so it never crashes on a legacy Windows console (cp1252); rich is used
 purely for color, and unicode-heavy widgets (rule lines, progress bars) are
 gated to terminals that can render them.
 
-stdout = progress/info, stderr = warnings/errors (Jenkins log readability).
+stdout = progress / info / warnings, stderr = fatal errors only. (Warnings go to
+stdout so a CI runner that wraps native-command stderr as an error — e.g.
+Jenkins' PowerShell step — doesn't make benign warnings look like failures.)
 """
 import getpass
 import sys
@@ -63,8 +65,9 @@ def ok(msg: str) -> None:
 
 
 def warn(msg: str) -> None:
-    _err.print(f"[{_C_WARN}][WARN][/] {msg}") if HAVE_RICH \
-        else print(f"[WARN] {msg}", file=sys.stderr)
+    # stdout, not stderr: a warning is not a failure, and CI runners that treat
+    # native stderr as an error (Jenkins' powershell step) would otherwise flag it.
+    _con.print(f"[{_C_WARN}][WARN][/] {msg}") if HAVE_RICH else print(f"[WARN] {msg}")
 
 
 def error(msg: str) -> None:

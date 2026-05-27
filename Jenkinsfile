@@ -460,7 +460,10 @@ pipeline {
         failure {
             script { runNotify('failure') }
         }
-        always {
+        // cleanWs MUST run in `cleanup` (the guaranteed-last post block), not
+        // `always` — `always` runs before `failure`, which would wipe the venv
+        // before the failure notification can use it.
+        cleanup {
             cleanWs()
         }
     }
