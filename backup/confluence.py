@@ -33,7 +33,14 @@ import requests
 from . import naming, ui
 
 
-USER_AGENT = "atlassian-weekly-backup/1.0"
+# A browser-like UA + explicit JSON Accept: some Atlassian Cloud endpoints return
+# an HTML error/redirect page (which then fails to JSON-parse) for non-browser
+# user agents or when the client doesn't ask for JSON. This mirrors what a real
+# logged-in browser session sends.
+USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/148.0.0.0 Safari/537.36"
+)
 
 
 def basic_auth_header(email: str, token: str) -> str:
@@ -49,6 +56,7 @@ def trigger_backup(site: str, auth_header: str) -> dict:
     url = f"{site}/rest/obm/1.0/runbackup"
     headers = {
         "Authorization": auth_header,
+        "Accept": "application/json",
         "Content-Type": "application/json",
         "User-Agent": USER_AGENT,
         "X-Atlassian-Token": "no-check",
@@ -90,7 +98,9 @@ def poll_progress(site: str, auth_header: str,
     url = f"{site}/rest/obm/1.0/getprogress"
     headers = {
         "Authorization": auth_header,
+        "Accept": "application/json",
         "User-Agent": USER_AGENT,
+        "X-Atlassian-Token": "no-check",
     }
 
     deadline = time.time() + timeout_sec
@@ -142,6 +152,12 @@ def poll_progress(site: str, auth_header: str,
         # Fallback: fileName present + size > 0 + no error
         if file_name and size > 0 and "error" not in current_status:
             return data
+
+        # Genuine backup-side failure — fail fast instead of polling for hours.
+        if not file_name and ("error" in current_status or "fail" in current_status):
+            raise RuntimeError(
+                f"Confluence backup reported a failure status: '{current_status}' "
+                f"(full response: {data})")
 
         time.sleep(interval_sec)
 

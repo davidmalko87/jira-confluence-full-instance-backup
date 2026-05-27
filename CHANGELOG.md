@@ -9,7 +9,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 ## [0.9.2] - 2026-05-27
 
 ### Fixed
-- **Confluence backup crashed with an opaque `Expecting value: line 1 column 1 (char 0)`** when `getprogress` returned an empty/non-JSON body. `poll_progress` now tolerates a few transient non-JSON responses (retrying) and, if they persist, fails with the actual HTTP status + body snippet so the real cause is visible. The `runbackup` response is also logged. 401/403 during polling exits `2` (credentials), like Jira.
+- **Confluence backup crashed with an opaque `Expecting value: line 1 column 1 (char 0)`** when `getprogress` returned an empty/non-JSON body. Multiple hardening fixes:
+  - **Browser-like `User-Agent` + explicit `Accept: application/json`** on the Confluence requests (was a custom non-browser UA with no Accept) — some Atlassian Cloud endpoints return an HTML error/redirect page for non-browser clients, which is what failed to JSON-parse.
+  - `poll_progress` tolerates a few transient non-JSON responses (retrying), then fails with the actual HTTP status + body snippet; a genuine `error`/`fail` status now fails fast instead of polling for hours.
+  - The `runbackup` response is logged; 401/403 during polling exits `2` (credentials), like Jira.
 - **Failure notifications failed with `module 'venv' could not be loaded`** — `cleanWs()` was in the `always{}` post block, which runs *before* `failure{}`, wiping the venv before the failure notification could use it. Moved cleanup to the `cleanup{}` block (guaranteed to run last).
 
 ### Changed
