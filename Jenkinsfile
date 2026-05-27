@@ -429,7 +429,7 @@ pipeline {
                     }
                     def extra = env.S3_ENDPOINT_URL?.trim() ? " --endpoint-url \"${env.S3_ENDPOINT_URL}\"" : ""
                     def cmd = "-m backup.upload --provider \"${env.STORAGE_PROVIDER}\" " +
-                              "--dest \"${env.STORAGE_DEST}\"${extra}"
+                              "--dest \"${env.STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"${extra}"
                     // Best-effort across targets; a non-zero exit means at least one
                     // target failed -> 'upload' outcome, severity per the policy.
                     int code = creds ? withCredentials(creds) { runStatus(cmd) } : runStatus(cmd)
