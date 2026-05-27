@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.9.1] - 2026-05-27
+
+### Fixed
+- **Jenkinsfile failed to compile** (`Expected a symbol` on every `choice` / `booleanParam`). Declarative Pipeline's `parameters{}` block only accepts **literal** values — the env-driven defaults I used (`choices: ([env.X ?: ...] + [...]).unique()` and `defaultValue: (env.STORAGE_PROVIDER ?: '').contains('gcs')`) are illegal there and broke pipeline parsing entirely. Parameters are now literals; the env-driven behaviour moved into the `Setup` stage: `resolvePolicy()` (a non-default build-parameter pick wins, else the configured global env var, else the literal default — so CRON builds still honour configured values) and storage/notify fall back to the configured global env when no checkbox is ticked.
+
+### Changed
+- **Cleaner interactive menu** — grouped into Backup / Pipeline steps / Verify & manage / Configuration with sequential numbering, instead of the cramped two-column list. (Numbers changed: Test connections is now 8, Validate 9, Export Jenkins 15, etc.)
+
+---
+
 ## [0.9.0] - 2026-05-27
 
 ### Added
@@ -141,6 +151,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.9.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.1
 [0.9.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.0
 [0.8.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.8.0
 [0.7.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.7.0

@@ -106,15 +106,19 @@ jira-confluence-backup            # or: python main.py   /   python -m backup
   Storage  s3:my-backups
   Notify   slack
 
-  1) Backup Jira          7) Validate backup
-  2) Backup Confluence    8) Cleanup backups
-  3) Backup both          9) Test connections
-  4) Full run            10) Configure credentials
-  5) Archive ./out       11) Show configuration
-  6) Upload ./archive    12) List local backups
-                         13) Export Jenkins setup
-                         14) Refresh Jira cookies
-  0) Exit
+  Backup
+     1) Jira          2) Confluence     3) Both
+     4) Full run (backup -> archive -> upload -> notify)
+     5) Fetch existing Jira backup (no new trigger)
+  Pipeline steps
+     6) Archive ./out      7) Upload ./archive
+  Verify & manage
+     8) Test connections   9) Validate backup
+    10) Cleanup backups   11) List local backups
+  Configuration
+    12) Show config       13) Configure credentials
+    14) Refresh cookies   15) Export Jenkins setup
+     0) Exit
 ```
 
 ### 3. Run — CLI (automation)
@@ -335,7 +339,7 @@ These are Atlassian platform constraints, not tool limitations:
 
 ## Troubleshooting
 
-Run **Test connections** (menu option 9) first — it pinpoints which of Jira /
+Run **Test connections** (menu option 8) first — it pinpoints which of Jira /
 Confluence / storage is misconfigured. Common errors and fixes (403 vs the 204
 "success", cookie refresh, the 48-hour cooldown, storage permissions, Jenkins)
 are in **[docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)**.
