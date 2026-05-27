@@ -56,6 +56,8 @@ def trigger_backup(site: str, auth_header: str) -> dict:
     body = {"cbAttachments": True, "exportToCloud": True}
 
     resp = requests.post(url, headers=headers, json=body, timeout=60)
+    print(f"[DEBUG] Confluence runbackup -> HTTP {resp.status_code}: "
+          f"{' '.join((resp.text or '').split())[:200] or '(empty body)'}")
 
     if resp.status_code == 406:
         print("[INFO] runbackup returned 406 (cosmetic, backup started anyway)")
@@ -93,12 +95,37 @@ def poll_progress(site: str, auth_header: str,
 
     deadline = time.time() + timeout_sec
     poll_count = 0
+    nonjson_streak = 0
+    max_nonjson = 6   # ~3 min of empties before giving up (interval_sec=30)
 
     while time.time() < deadline:
         poll_count += 1
         resp = requests.get(url, headers=headers, timeout=60)
+        if resp.status_code in (401, 403):
+            print(f"[ERROR] Confluence getprogress auth rejected (HTTP "
+                  f"{resp.status_code}) — check ATL_EMAIL / ATL_TOKEN", file=sys.stderr)
+            sys.exit(2)
         resp.raise_for_status()
-        data = resp.json()
+
+        # getprogress sometimes returns an empty/non-JSON body right after the
+        # backup is requested. Tolerate a few, but surface the actual body so a
+        # persistent failure is diagnosable instead of an opaque "Expecting value".
+        try:
+            data = resp.json()
+        except ValueError:
+            nonjson_streak += 1
+            snippet = " ".join((resp.text or "").split())[:200] or "(empty body)"
+            ui.warn(f"[poll {poll_count}] getprogress returned non-JSON "
+                    f"(HTTP {resp.status_code}, {nonjson_streak}/{max_nonjson}): {snippet}")
+            if nonjson_streak >= max_nonjson:
+                raise RuntimeError(
+                    f"Confluence getprogress kept returning non-JSON (HTTP "
+                    f"{resp.status_code}): {snippet}. The OBM backup likely didn't "
+                    f"start — verify ATL_EMAIL/ATL_TOKEN belong to an admin and that "
+                    f"backups are permitted on this Confluence instance.")
+            time.sleep(interval_sec)
+            continue
+        nonjson_streak = 0
 
         current_status = (data.get("currentStatus") or "").lower()
         file_name = data.get("fileName", "")

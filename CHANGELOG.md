@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.9.2] - 2026-05-27
+
+### Fixed
+- **Confluence backup crashed with an opaque `Expecting value: line 1 column 1 (char 0)`** when `getprogress` returned an empty/non-JSON body. `poll_progress` now tolerates a few transient non-JSON responses (retrying) and, if they persist, fails with the actual HTTP status + body snippet so the real cause is visible. The `runbackup` response is also logged. 401/403 during polling exits `2` (credentials), like Jira.
+- **Failure notifications failed with `module 'venv' could not be loaded`** — `cleanWs()` was in the `always{}` post block, which runs *before* `failure{}`, wiping the venv before the failure notification could use it. Moved cleanup to the `cleanup{}` block (guaranteed to run last).
+
+### Changed
+- **Warnings now print to stdout, not stderr** — so a CI runner that wraps native-command stderr as an error (Jenkins' PowerShell step) no longer makes benign warnings (e.g. the 48h-cooldown notice) look like crashes. Fatal errors still go to stderr.
+
+---
+
 ## [0.9.1] - 2026-05-27
 
 ### Fixed
@@ -151,6 +162,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.9.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.2
 [0.9.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.1
 [0.9.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.0
 [0.8.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.8.0
