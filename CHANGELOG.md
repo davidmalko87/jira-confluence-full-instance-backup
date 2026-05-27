@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.11.1] - 2026-05-27
+
+### Fixed
+- **Confluence export check no longer false-warns.** The v0.11.0 check looked for `entities.xml` — that's the Confluence *Server/DC* XML-backup format. Confluence *Cloud* `Site_Backup.zip` is a multi-file ZIP that doesn't use a top-level `entities.xml`, so the check now treats a valid, non-corrupt, multi-file ZIP as a good Confluence backup (Jira still verifies `entities.xml`/`activeobjects.xml`). The "not a ZIP / corrupt / empty" hard-fail (the real garbage guard) is unchanged.
+
+### Added
+- **`docs/RESTORE.md`** — how to restore each product, including the important Atlassian limitation that a Cloud site with **both** Jira and Confluence can't do a full Confluence site import (you import space-by-space), and that these are full-instance DR/migration artifacts. Linked from the README.
+
+---
+
 ## [0.11.0] - 2026-05-27
 
 ### Added
@@ -210,6 +220,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.11.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.1
 [0.11.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.0
 [0.10.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.1
 [0.10.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.0
