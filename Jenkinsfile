@@ -132,8 +132,27 @@ def runStatus(String cmd) {
 //   resilient : never aborts — every problem only marks the build UNSTABLE.
 //   balanced  : (default) hard-fail on credentials / error / nobackup; soft
 //               (unstable + continue) on cooldown and upload-target failures.
+//
+// FULL CONTROL: each outcome also has a per-outcome override parameter
+// (ON_COOLDOWN, ON_CREDENTIALS, ON_BACKUP_ERROR, ON_NO_BACKUP, ON_UPLOAD_FAILURE).
+// Left at 'default' it follows the preset above; set to continue/unstable/abort
+// to override that single outcome regardless of the preset.
 def policyFor(String outcome) {
     if (outcome == 'success') { return 'ok' }
+
+    // First: a per-outcome override wins when set to something other than 'default'.
+    def override = [
+        cooldown:    params.ON_COOLDOWN,
+        credentials: params.ON_CREDENTIALS,
+        error:       params.ON_BACKUP_ERROR,
+        nobackup:    params.ON_NO_BACKUP,
+        upload:      params.ON_UPLOAD_FAILURE,
+    ].get(outcome)
+    if (override && override != 'default') {
+        return (override == 'continue') ? 'ok' : override   // 'unstable' / 'abort' pass through
+    }
+
+    // Otherwise: fall back to the FAILURE_POLICY preset.
     def preset = params.FAILURE_POLICY ?: 'balanced'
     if (preset == 'resilient') { return 'unstable' }
     if (preset == 'strict')    { return 'abort' }
@@ -188,6 +207,25 @@ pipeline {
                choices: ([(env.JIRA_COOLDOWN_ACTION ?: 'skip')] + ['skip', 'download-existing']).unique(),
                description: 'On the Jira 48h cooldown: skip Jira (mark unstable), or download the ' +
                             'most recent existing backup instead.')
+
+        // --- Advanced: per-outcome overrides. Leave 'default' to follow the
+        //     FAILURE_POLICY preset above; set continue / unstable / abort to
+        //     control that one outcome regardless of the preset. ---
+        choice(name: 'ON_COOLDOWN',
+               choices: ([(env.ON_COOLDOWN ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+               description: 'Override for the Jira 48h cooldown outcome')
+        choice(name: 'ON_CREDENTIALS',
+               choices: ([(env.ON_CREDENTIALS ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+               description: 'Override for expired/rejected credentials (Jira cookies or Confluence token)')
+        choice(name: 'ON_BACKUP_ERROR',
+               choices: ([(env.ON_BACKUP_ERROR ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+               description: 'Override for a backup error or timeout')
+        choice(name: 'ON_NO_BACKUP',
+               choices: ([(env.ON_NO_BACKUP ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+               description: 'Override for when NO product produced a backup this run')
+        choice(name: 'ON_UPLOAD_FAILURE',
+               choices: ([(env.ON_UPLOAD_FAILURE ?: 'default')] + ['default', 'continue', 'unstable', 'abort']).unique(),
+               description: 'Override for an upload-target failure')
 
         // --- What to back up (untick to skip a product entirely) ---
         booleanParam(name: 'BACKUP_JIRA', defaultValue: true,
