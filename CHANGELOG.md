@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.9.4] - 2026-05-27
+
+### Fixed
+- **Jira export download went to a broken `api.media.atlassian.com` URL** — the completion response includes a media URL whose path is malformed (it rejects with `HTTP 400 … /fileId: pattern should match`), and `download_backup` was *preferring* that URL. The download now always uses the **UI download servlet** the browser uses — `/plugins/servlet/export/download/?fileId=<uuid>` with the session cookies — which authenticates and 302-redirects to a freshly-signed media URL (followed automatically). The file UUID is extracted from the completion `result` (`<uuid>/binary`) / `fileName`, never from the media URL (which embeds the tenant `client` UUID, a different id). The existing-backup completion response is now logged for diagnosis.
+
+---
+
 ## [0.9.3] - 2026-05-27
 
 ### Fixed
@@ -178,6 +185,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.9.4]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.4
 [0.9.3]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.3
 [0.9.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.2
 [0.9.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.1

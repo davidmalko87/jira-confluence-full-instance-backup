@@ -66,6 +66,10 @@ def missing_cookies(cookies: dict) -> list[str]:
 _CURL_COOKIE_RE = re.compile(r"(?:-b|--cookie)\s+(['\"])(?P<v>.*?)\1", re.DOTALL)
 _HEADER_COOKIE_RE = re.compile(r"[Cc]ookie:\s*(?P<v>[^'\"\r\n]+)")
 
+# Export file UUID, used to build the download servlet URL (?fileId=<uuid>).
+_UUID_RE = re.compile(
+    r"[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}")
+
 
 def extract_cookie_blob(text: str) -> str:
     """Accept a full cURL command, a 'Cookie:' header, or an already-clean
@@ -222,30 +226,31 @@ def poll_progress(site: str, cookies: dict, task_id: str,
     raise TimeoutError(f"Backup did not complete within {timeout_sec}s")
 
 
-def download_backup(site: str, cookies: dict, download_ref: str, out_path: Path,
+def download_backup(site: str, cookies: dict, file_id: str, out_path: Path,
                     show_progress: bool = False) -> int:
     """
-    Stream the export to disk. `download_ref` is either:
-      - a full URL (modern Jira Cloud returns an api.media.atlassian.com URL whose
-        token is embedded — fetched directly, no cookies), or
-      - a fileId for the legacy `/plugins/servlet/export/download/?fileId=` servlet.
-    Returns bytes written.
+    Download the Jira export through the UI download servlet — the exact link the
+    browser uses:  {site}/plugins/servlet/export/download/?fileId=<uuid>
+
+    `file_id` is the export's file UUID (the completion `result` is "<uuid>/binary";
+    only the bare UUID goes in the query). The servlet authenticates via the
+    session cookies and 302-redirects to a FRESHLY-signed api.media.atlassian.com
+    URL, which requests follows automatically. We intentionally do NOT reuse any
+    api.media URL taken straight from the completion response — that one carries a
+    malformed path/token and rejects with HTTP 400. Returns bytes written.
     """
-    ref = str(download_ref)
-    if ref.startswith(("http://", "https://")):
-        url, req_kwargs = ref, {"headers": {"User-Agent": USER_AGENT}}
-    else:
-        # The completion `result` field is `<uuid>/binary`, but the download servlet
-        # expects only the bare `<uuid>` (the browser uses
-        # `?fileId=<uuid>`, no `/binary`). Passing the `/binary` suffix yields a
-        # malformed media URL and a 404. Strip everything from the first slash.
-        file_id = ref.split("/", 1)[0]
-        url = f"{site}/plugins/servlet/export/download/"
-        req_kwargs = {"headers": {"User-Agent": USER_AGENT}, "cookies": cookies,
-                      "params": {"fileId": file_id}}
+    file_id = str(file_id).split("/", 1)[0]   # tolerate "<uuid>/binary"
+    url = f"{site}/plugins/servlet/export/download/"
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/zip, application/octet-stream, */*",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": f"{site}/secure/admin/CloudExport.jspa",
+    }
 
     bytes_written = 0
-    with requests.get(url, stream=True, timeout=600, **req_kwargs) as resp:
+    with requests.get(url, params={"fileId": file_id}, headers=headers,
+                      cookies=cookies, stream=True, timeout=600) as resp:
         if resp.status_code >= 400:
             snippet = ""
             try:
@@ -254,10 +259,7 @@ def download_backup(site: str, cookies: dict, download_ref: str, out_path: Path,
                 pass
             raise RuntimeError(
                 f"Download failed: HTTP {resp.status_code} from {resp.url}\n"
-                f"  body: {snippet}\n"
-                f"  Modern Jira Cloud serves exports from api.media.atlassian.com; the "
-                f"download reference may need different handling. Capture the browser's "
-                f"'Copy as cURL' of a manual export download and share it so this can be fixed.")
+                f"  fileId={file_id}\n  body: {snippet}")
         total = int(resp.headers.get("Content-Length") or 0) or None
 
         def _stream(update=None):
@@ -316,13 +318,22 @@ def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
 
 def _download_from_task(site: str, cookies: dict, final: dict, out_dir: Path,
                         name_template: str, label: str) -> Path:
-    """Resolve the download reference from a completed task response and stream it."""
-    download_ref = (final.get("downloadUrl") or final.get("mediaUrl")
-                    or final.get("result") or final.get("fileName"))
-    if not download_ref:
-        raise RuntimeError(f"No download reference in completion response: {final}")
+    """
+    Pull the export's file UUID from the completed task response and download it
+    via the servlet. The UUID comes from `result` ("<uuid>/binary") or `fileName`
+    — NOT from any `downloadUrl`/`mediaUrl`, whose api.media URL embeds the tenant
+    `client` UUID (wrong id) and a malformed path.
+    """
+    file_id = None
+    for field in ("result", "fileName"):
+        match = _UUID_RE.search(str(final.get(field) or ""))
+        if match:
+            file_id = match.group(0)
+            break
+    if not file_id:
+        raise RuntimeError(f"No export file UUID in completion response: {final}")
     out_path = out_dir / naming.render_name(name_template, "jira", ext=".zip", site=site)
-    size = download_backup(site, cookies, download_ref, out_path, show_progress=True)
+    size = download_backup(site, cookies, file_id, out_path, show_progress=True)
     ui.ok(f"Jira backup{label}: {out_path} ({size / (1024 * 1024):.1f} MB)")
     return out_path
 
@@ -347,6 +358,7 @@ def fetch_existing_backup(site: str, cookies: dict, out_dir: Path,
     except TimeoutError:
         ui.warn("Existing Jira backup task is still in progress — try again later")
         return None
+    print(f"[DEBUG] existing-backup completion response: {final}")
     try:
         return _download_from_task(site, cookies, final, out_dir, name_template, " (existing)")
     except RuntimeError as exc:
