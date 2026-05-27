@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.10.1] - 2026-05-27
+
+### Added
+- **`ARCHIVE_MODE` and `STORAGE_LAYOUT` are now Build-with-Parameters dropdowns** too (they were already `.env` / Configure settings + global env vars). You can switch per-product vs combined archives, and the folder depth, per run from the Jenkins form — no need to re-run Configure for a one-off. They resolve the same way as the other policy settings: an explicit non-default pick wins, otherwise the configured global env value (so CRON builds honour it), otherwise the default.
+
+---
+
 ## [0.10.0] - 2026-05-27
 
 ### Changed
@@ -196,6 +203,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.10.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.1
 [0.10.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.0
 [0.9.4]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.4
 [0.9.3]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.3

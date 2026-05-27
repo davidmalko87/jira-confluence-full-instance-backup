@@ -278,6 +278,12 @@ pipeline {
         booleanParam(name: 'NOTIFY_WEBHOOK', defaultValue: false, description: 'Generic webhook')
 
         // --- Archive + timing ---
+        choice(name: 'ARCHIVE_MODE', choices: ['per-product', 'combined'],
+               description: 'per-product (default): one .7z per product (jira-<date>.7z, ' +
+                            'confluence-<date>.7z) each with its own manifest. combined: a single .7z.')
+        choice(name: 'STORAGE_LAYOUT', choices: ['year-month', 'year', 'year-month-day', 'flat'],
+               description: 'Date-folder depth for object keys: year-month (2026/05/, default), ' +
+                            'year, year-month-day, or flat (no date folder).')
         choice(name: 'ARCHIVE_COMPRESSION', choices: ['5', '0', '1', '2', '3', '4', '6', '7', '8', '9'],
                description: '7-Zip compression: 0 (store) - 9 (ultra); default 5')
         string(name: 'PRODUCT_NAME_TEMPLATE', defaultValue: "${env.PRODUCT_NAME_TEMPLATE ?: '{product}-{date}'}",
@@ -342,6 +348,8 @@ pipeline {
                     // Literal-default params: a non-default pick wins, else keep the
                     // configured global env (so CRON builds honour it), else the default.
                     env.ARCHIVE_COMPRESSION  = resolvePolicy(params.ARCHIVE_COMPRESSION, '5', env.ARCHIVE_COMPRESSION)
+                    env.ARCHIVE_MODE         = resolvePolicy(params.ARCHIVE_MODE, 'per-product', env.ARCHIVE_MODE)
+                    env.STORAGE_LAYOUT       = resolvePolicy(params.STORAGE_LAYOUT, 'year-month', env.STORAGE_LAYOUT)
                     env.FAILURE_POLICY       = resolvePolicy(params.FAILURE_POLICY, 'balanced', env.FAILURE_POLICY)
                     env.JIRA_COOLDOWN_ACTION = resolvePolicy(params.JIRA_COOLDOWN_ACTION, 'download-existing', env.JIRA_COOLDOWN_ACTION)
                     env.ON_COOLDOWN          = resolvePolicy(params.ON_COOLDOWN, 'default', env.ON_COOLDOWN)
