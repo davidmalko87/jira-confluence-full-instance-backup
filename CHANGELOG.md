@@ -6,6 +6,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.10.0] - 2026-05-27
+
+### Changed
+- **Per-product archives by default** — instead of one combined `atlassian-backup-<date>.7z`, each product is now archived and uploaded separately: `jira-<date>.7z` and `confluence-<date>.7z`, each with its **own manifest** (`<stem>.manifest.json`). This matches how Atlassian restore works (per product) and makes the bucket contents self-explanatory. Set `ARCHIVE_MODE=combined` (or **Configure → Archive mode**) to keep the single bundled archive.
+- **Shallower storage folders** — object keys now default to **`YYYY/MM/`** (`STORAGE_LAYOUT=year-month`) instead of `YYYY/MM/DD/`; the filename already carries the full date and retention is ~30 days. Choose `year`, `year-month-day`, or `flat` via `STORAGE_LAYOUT` / **Configure → Folder layout**. Upload now ships every manifest alongside its archive.
+
+### Added
+- `ARCHIVE_MODE` and `STORAGE_LAYOUT` config (prompted in `Configure`, carried to Jenkins as global env vars by the export).
+
+---
+
 ## [0.9.4] - 2026-05-27
 
 ### Fixed
@@ -185,6 +196,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.10.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.10.0
 [0.9.4]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.4
 [0.9.3]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.3
 [0.9.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.2

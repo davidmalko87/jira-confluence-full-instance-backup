@@ -151,6 +151,8 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
                      ("SITE_CONFLUENCE", cfg.site_confluence),
                      ("STORAGE_PROVIDER", cfg.storage_provider),
                      ("STORAGE_DEST", cfg.storage_dest),
+                     ("STORAGE_LAYOUT", cfg.storage_layout),
+                     ("ARCHIVE_MODE", cfg.archive_mode),
                      ("S3_ENDPOINT_URL", cfg.s3_endpoint_url),
                      ("AWS_DEFAULT_REGION", cfg.aws_default_region),
                      ("NOTIFY_CHANNELS", cfg.notify_channels),

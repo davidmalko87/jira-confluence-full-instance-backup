@@ -143,7 +143,7 @@ def do_backup(cfg: config.Config, products: list[str], out_dir: Path,
 
 
 def do_archive(cfg: config.Config, out_dir: Path, archive_dir: Path, *,
-               dry_run: bool = False, no_encrypt: bool = False) -> Path | None:
+               dry_run: bool = False, no_encrypt: bool = False) -> list[Path] | None:
     ui.section("Archive (7z)")
     try:
         level = int(cfg.archive_compression)
@@ -152,17 +152,23 @@ def do_archive(cfg: config.Config, out_dir: Path, archive_dir: Path, *,
     except (TypeError, ValueError):
         level = archive.DEFAULT_COMPRESSION
     password = "" if no_encrypt else cfg.archive_password
+    mode = cfg.archive_mode or "per-product"
 
     if dry_run:
-        name = naming.render_name(cfg.archive_name_template, "atlassian",
-                                  ext=".7z", site=cfg.site_jira)
-        enc = "AES-256" if password else "unencrypted"
-        ui.info(f"[DRY] would archive {out_dir} -> {archive_dir / name} "
-                f"(mx={level}, {enc}, + manifest)")
+        if mode == "combined":
+            name = naming.render_name(cfg.archive_name_template, "atlassian",
+                                      ext=".7z", site=cfg.site_jira)
+            ui.info(f"[DRY] would archive {out_dir} -> {archive_dir / name} "
+                    f"(combined, mx={level}, {'AES-256' if password else 'unencrypted'}, + manifest)")
+        else:
+            n = len(list(out_dir.glob("*.zip"))) if out_dir.exists() else 0
+            ui.info(f"[DRY] would archive {n} product backup(s) in {out_dir} -> "
+                    f"per-product .7z + manifest each (mx={level}, "
+                    f"{'AES-256' if password else 'unencrypted'})")
         return None
     return archive.run_archive(out_dir, archive_dir, password,
                                name_template=cfg.archive_name_template,
-                               site=cfg.site_jira, level=level)
+                               site=cfg.site_jira, level=level, mode=mode)
 
 
 def do_upload(cfg: config.Config, archive_dir: Path, *, dry_run: bool = False) -> None:
@@ -174,6 +180,7 @@ def do_upload(cfg: config.Config, archive_dir: Path, *, dry_run: bool = False) -
         ui.info(f"[DRY] would upload {n} archive(s) + manifest to {where}")
         return
     upload.run_upload_multi(cfg.storage_provider, cfg.storage_dest, archive_dir,
+                            prefix=upload._layout_prefix(cfg.storage_layout),
                             endpoint_url=cfg.s3_endpoint_url or None,
                             region=cfg.aws_default_region or None)
 
@@ -330,6 +337,13 @@ def do_configure(cfg: config.Config) -> None:
                                      _pref(cfg.archive_password), secret=True)
     cfg.archive_compression = ui.prompt("Compression 0-9 (0=fastest, 9=smallest)",
                                         cfg.archive_compression or "5")
+    ui.info("Archive layout:")
+    ui.info("  per-product - one .7z per product (jira-<date>.7z, confluence-<date>.7z),")
+    ui.info("                each with its own manifest  [recommended]")
+    ui.info("  combined    - a single .7z bundling both products + one manifest")
+    am = (ui.prompt("Archive mode [per-product/combined]",
+                    cfg.archive_mode or "per-product") or "per-product").lower()
+    cfg.archive_mode = am if am in ("per-product", "combined") else "per-product"
     cfg.product_name_template = ui.prompt(
         "Per-product filename template", cfg.product_name_template or naming.DEFAULT_PRODUCT_TEMPLATE)
     cfg.archive_name_template = ui.prompt(
@@ -395,6 +409,14 @@ def do_configure(cfg: config.Config) -> None:
     elif cfg.storage_provider == "azure":
         cfg.azure_conn = ui.prompt("Azure Storage connection string",
                                    _pref(cfg.azure_conn), secret=True)
+    ui.info("Folder layout in storage (the filename already carries the date; "
+            "retention is ~30 days):")
+    ui.info("  year-month (2026/05/) [recommended]   year (2026/)   "
+            "year-month-day (2026/05/27/)   flat (no folder)")
+    sl = (ui.prompt("Folder layout [year-month/year/year-month-day/flat]",
+                    cfg.storage_layout or "year-month") or "year-month").lower()
+    cfg.storage_layout = sl if sl in ("year-month", "year", "year-month-day", "flat") \
+        else "year-month"
 
     # ── Notifications ──
     ui.section("Notifications")
