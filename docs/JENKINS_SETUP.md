@@ -339,6 +339,30 @@ Fastest refresh (validated):
 
 Or update it by hand: Manage Jenkins → Credentials → `jira-cookies` → Update.
 
+### Retention / rotation (delete old backups)
+
+This tool **only ever writes** — by design it never deletes from your store. The
+storage credential should be **write-only** (e.g. GCS `roles/storage.objectCreator`),
+so a compromised job or a leaked key can't wipe your existing backups. Rotation is
+delegated to the **storage provider's lifecycle rule**, which deletes objects older
+than N days automatically. Set one to match your retention (Atlassian keeps the
+source backups ~30 days):
+
+- **GCS** — bucket → *Lifecycle* → Add rule: *Delete object* when *Age > 30 days*.
+  CLI: `gcloud storage buckets update gs://<bucket> --lifecycle-file=rule.json`
+  where `rule.json` =
+  `{"rule":[{"action":{"type":"Delete"},"condition":{"age":30}}]}`
+- **AWS S3 / S3-compatible** — bucket → *Management* → *Lifecycle rules* → add an
+  *Expiration* rule (expire current versions after 30 days). R2/B2/MinIO have the
+  same lifecycle concept.
+- **Azure Blob** — storage account → *Lifecycle management* → rule: delete blobs
+  *N days after last modification*.
+- **local** provider — lifecycle rules don't apply; prune the directory with the
+  CLI (`python main.py --cleanup --keep-days 30`) on a schedule, or an OS cron.
+
+Because each backup object's name carries its date, a lifecycle age rule maps
+directly to "keep the last N days".
+
 ### Credential ↔ stage map
 
 | Stage | Credentials bound | Common failure |
