@@ -342,6 +342,25 @@ def do_configure(cfg: config.Config) -> None:
         "path like C:\\...\\python.exe if 'python' isn't on the service PATH)",
         _pref(cfg.python_bin))
 
+    # ── Pipeline behaviour ──
+    ui.section("Pipeline behaviour")
+    ui.info("How the Jenkins pipeline reacts to each outcome:")
+    ui.info("  balanced  - stop on expired credentials / backup error / no-backup;")
+    ui.info("              keep going (UNSTABLE) on cooldown + upload failures  [recommended]")
+    ui.info("  resilient - never stop the build, only mark it UNSTABLE")
+    ui.info("  strict    - stop the build on any problem")
+    fp = (ui.prompt("Failure policy [balanced/resilient/strict]",
+                    cfg.failure_policy or "balanced") or "balanced").lower()
+    cfg.failure_policy = fp if fp in ("balanced", "resilient", "strict") else "balanced"
+
+    ui.info("Jira allows a new backup only every 48h. When that cooldown is active:")
+    ui.info("  download-existing - ship the most recent EXISTING backup so the run still")
+    ui.info("                      produces an archive  [recommended]")
+    ui.info("  skip              - skip Jira this run (mark UNSTABLE), produce nothing")
+    ca = (ui.prompt("On Jira cooldown [download-existing/skip]",
+                    cfg.jira_cooldown_action or "download-existing") or "download-existing").lower()
+    cfg.jira_cooldown_action = ca if ca in ("download-existing", "skip") else "download-existing"
+
     # ── Storage ──
     ui.section("Storage")
     ui.info("Where to upload backups:")
