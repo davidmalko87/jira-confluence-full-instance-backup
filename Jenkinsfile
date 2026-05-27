@@ -220,9 +220,9 @@ pipeline {
                             'resilient = never abort, only mark UNSTABLE. strict = abort on any problem. ' +
                             '(Leave on balanced to honour the value configured in Jenkins global env.)')
         choice(name: 'JIRA_COOLDOWN_ACTION',
-               choices: ['skip', 'download-existing'],
-               description: 'On the Jira 48h cooldown: skip Jira (mark unstable), or download the ' +
-                            'most recent existing backup instead.')
+               choices: ['download-existing', 'skip'],
+               description: 'On the Jira 48h cooldown: download the most recent existing backup ' +
+                            '(default — a run is never wasted), or skip Jira (mark unstable).')
 
         // --- Advanced: per-outcome overrides. 'default' = follow the preset above;
         //     continue / unstable / abort overrides that one outcome. ---
@@ -343,7 +343,7 @@ pipeline {
                     // configured global env (so CRON builds honour it), else the default.
                     env.ARCHIVE_COMPRESSION  = resolvePolicy(params.ARCHIVE_COMPRESSION, '5', env.ARCHIVE_COMPRESSION)
                     env.FAILURE_POLICY       = resolvePolicy(params.FAILURE_POLICY, 'balanced', env.FAILURE_POLICY)
-                    env.JIRA_COOLDOWN_ACTION = resolvePolicy(params.JIRA_COOLDOWN_ACTION, 'skip', env.JIRA_COOLDOWN_ACTION)
+                    env.JIRA_COOLDOWN_ACTION = resolvePolicy(params.JIRA_COOLDOWN_ACTION, 'download-existing', env.JIRA_COOLDOWN_ACTION)
                     env.ON_COOLDOWN          = resolvePolicy(params.ON_COOLDOWN, 'default', env.ON_COOLDOWN)
                     env.ON_CREDENTIALS       = resolvePolicy(params.ON_CREDENTIALS, 'default', env.ON_CREDENTIALS)
                     env.ON_BACKUP_ERROR      = resolvePolicy(params.ON_BACKUP_ERROR, 'default', env.ON_BACKUP_ERROR)
@@ -429,7 +429,7 @@ pipeline {
                     }
                     def extra = env.S3_ENDPOINT_URL?.trim() ? " --endpoint-url \"${env.S3_ENDPOINT_URL}\"" : ""
                     def cmd = "-m backup.upload --provider \"${env.STORAGE_PROVIDER}\" " +
-                              "--dest \"${env.STORAGE_DEST}\"${extra}"
+                              "--dest \"${env.STORAGE_DEST}\" --in \"${ARCHIVE_DIR}\"${extra}"
                     // Best-effort across targets; a non-zero exit means at least one
                     // target failed -> 'upload' outcome, severity per the policy.
                     int code = creds ? withCredentials(creds) { runStatus(cmd) } : runStatus(cmd)

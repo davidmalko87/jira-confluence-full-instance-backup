@@ -307,18 +307,20 @@ override into a Jenkins global env var).
 
 **Other knobs:**
 
-- `JIRA_COOLDOWN_ACTION` — on the 48h cooldown, `skip` Jira (default) or
-  `download-existing` (ship the most recent existing backup instead).
-- `JIRA_DOWNLOAD_EXISTING` — for a rerun: don't trigger, just fetch the latest
-  existing Jira backup.
+- `JIRA_COOLDOWN_ACTION` — on the 48h cooldown, **`download-existing` (default)**
+  ships the most recent existing backup so the run still produces an archive; set
+  it to `skip` to produce nothing and mark the build UNSTABLE instead. You can set
+  the default in **Configure → Pipeline behaviour** or per-run in Build with Parameters.
+- `JIRA_DOWNLOAD_EXISTING` — for a rerun: don't trigger at all, just fetch the
+  latest existing Jira backup (independent of the cooldown).
 - **Uploads are best-effort** — with several storage targets, a failure on one
   doesn't stop the others; every reachable target still gets the archive.
 - **Archive/Upload run** whenever *any* product produced a backup `.zip`; a
   cooldown marker alone never creates an empty upload.
 
-So to recover a failed Jira run: **Rerun** (the policy decides severity), or set
-`JIRA_COOLDOWN_ACTION=download-existing` / tick `JIRA_DOWNLOAD_EXISTING` to ship
-the existing backup while Confluence + archive + upload proceed normally.
+By default a Jira cooldown is self-healing: the run downloads the existing backup
+and continues. To recover any other failed Jira run, just **Rerun** (the policy
+decides severity).
 
 ---
 

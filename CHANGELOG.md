@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.9.3] - 2026-05-27
+
+### Fixed
+- **Upload stage was missing the required `--in` argument** — the Jenkins `Upload` step ran `backup.upload --provider … --dest …` without `--in <archive dir>`, so it died with `argparse: the following arguments are required: --in` and never uploaded. (It only surfaced now that a run first got past Jira/Confluence/Archive.) The command now passes `--in "${ARCHIVE_DIR}"`.
+
+### Changed
+- **Jira cooldown now self-heals by default** — `JIRA_COOLDOWN_ACTION` defaults to **`download-existing`** (was `skip`): when a fresh backup is blocked by the 48h cooldown, the run automatically downloads the most recent existing backup so it still produces an archive, instead of coming back empty. Set it to `skip` to keep the old behaviour.
+
+### Added
+- **Configure → Pipeline behaviour** — the interactive `Configure` flow now prompts for the **failure policy** (balanced / resilient / strict) and the **Jira cooldown action** (download-existing / skip), with inline explanations, so you set how the pipeline behaves during setup instead of hunting through build parameters.
+
+---
+
 ## [0.9.2] - 2026-05-27
 
 ### Fixed
@@ -165,6 +178,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.9.3]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.3
 [0.9.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.2
 [0.9.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.1
 [0.9.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.9.0

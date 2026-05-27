@@ -26,7 +26,7 @@ SPEC = [
     ("backup_cron",          "BACKUP_CRON",                      False, "H 2 * * 4"),
     ("poll_timeout",         "POLL_TIMEOUT",                     False, "21600"),
     ("failure_policy",       "FAILURE_POLICY",                   False, "balanced"),
-    ("jira_cooldown_action", "JIRA_COOLDOWN_ACTION",             False, "skip"),
+    ("jira_cooldown_action", "JIRA_COOLDOWN_ACTION",             False, "download-existing"),
     ("on_cooldown",          "ON_COOLDOWN",                      False, "default"),
     ("on_credentials",       "ON_CREDENTIALS",                   False, "default"),
     ("on_backup_error",      "ON_BACKUP_ERROR",                  False, "default"),
@@ -69,7 +69,7 @@ class Config:
     backup_cron: str = "H 2 * * 4"
     poll_timeout: str = "21600"
     failure_policy: str = "balanced"
-    jira_cooldown_action: str = "skip"
+    jira_cooldown_action: str = "download-existing"
     on_cooldown: str = "default"
     on_credentials: str = "default"
     on_backup_error: str = "default"

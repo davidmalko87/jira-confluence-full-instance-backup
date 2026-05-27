@@ -358,7 +358,7 @@ def run_backup(site: str, cookies: dict, out_dir: Path,
                name_template: str = naming.DEFAULT_PRODUCT_TEMPLATE,
                poll_timeout: int = 21600,
                download_existing: bool = False,
-               cooldown_action: str = "skip") -> Path | None:
+               cooldown_action: str = "download-existing") -> Path | None:
     """
     Full trigger→poll→download flow. Returns the .zip path, or None when there is
     nothing to download (cooldown that was skipped, or no existing backup found).
@@ -442,9 +442,10 @@ def main():
                              "Env: JIRA_DOWNLOAD_EXISTING=true")
     parser.add_argument("--cooldown-action",
                         choices=["skip", "download-existing"],
-                        default=os.environ.get("JIRA_COOLDOWN_ACTION", "skip"),
-                        help="On the 48h cooldown: 'skip' (default) or "
-                             "'download-existing'. Env: JIRA_COOLDOWN_ACTION")
+                        default=os.environ.get("JIRA_COOLDOWN_ACTION", "download-existing"),
+                        help="On the 48h cooldown: 'download-existing' (default — "
+                             "ship the most recent existing backup) or 'skip'. "
+                             "Env: JIRA_COOLDOWN_ACTION")
     args = parser.parse_args()
 
     cookie_blob = os.environ.get("JIRA_COOKIES")
