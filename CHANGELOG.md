@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.12.0] - 2026-05-27
+
+### Added
+- **Disk-space pre-flight check.** Right after a download's size is known (and before any bytes are written), the Jira and Confluence stages check free space on the output directory: a download that **definitely won't fit fails fast** with a clear message instead of filling the disk and leaving a truncated backup, and a **tight** situation (below `MIN_FREE_DISK_MB`, default 500, or under 2× the incoming size) logs a warning. A stat failure is ignored rather than blocking the backup.
+
+---
+
 ## [0.11.2] - 2026-05-27
 
 ### Changed
@@ -227,6 +234,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.12.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.12.0
 [0.11.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.2
 [0.11.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.1
 [0.11.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.0

@@ -30,7 +30,7 @@ from pathlib import Path
 
 import requests
 
-from . import manifest, naming, ui
+from . import diskspace, manifest, naming, ui
 
 
 # A browser-like UA + explicit JSON Accept: some Atlassian Cloud endpoints return
@@ -185,6 +185,7 @@ def download_backup(site: str, auth_header: str, file_name: str,
     with requests.get(url, headers=headers, stream=True, timeout=600) as resp:
         resp.raise_for_status()
         total = int(resp.headers.get("Content-Length") or 0) or None
+        diskspace.precheck(out_path.parent, total or 0)
 
         def _stream(update=None):
             nonlocal bytes_written

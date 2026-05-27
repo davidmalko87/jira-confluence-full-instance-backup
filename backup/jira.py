@@ -23,7 +23,7 @@ from pathlib import Path
 
 import requests
 
-from . import manifest, naming, ui
+from . import diskspace, manifest, naming, ui
 
 
 # Cookies the backup endpoint actually needs. Only the auth + XSRF cookies are
@@ -261,6 +261,7 @@ def download_backup(site: str, cookies: dict, file_id: str, out_path: Path,
                 f"Download failed: HTTP {resp.status_code} from {resp.url}\n"
                 f"  fileId={file_id}\n  body: {snippet}")
         total = int(resp.headers.get("Content-Length") or 0) or None
+        diskspace.precheck(out_path.parent, total or 0)
 
         def _stream(update=None):
             nonlocal bytes_written
