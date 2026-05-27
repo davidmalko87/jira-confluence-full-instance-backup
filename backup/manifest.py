@@ -10,6 +10,7 @@ be cleaned up safely.
 import hashlib
 import json
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -17,6 +18,54 @@ MANIFEST_NAME = "manifest.json"          # combined-mode manifest
 MANIFEST_SUFFIX = ".manifest.json"       # per-product: <archive-stem>.manifest.json
 SCHEMA_VERSION = 1
 _PRODUCTS = ("jira", "confluence")
+
+
+# Entries that mark a genuine Atlassian site export, so we never archive/upload
+# (and later try to restore) an HTML error page or a truncated download.
+#   Jira Cloud export  : entities.xml + activeobjects.xml
+#   Confluence export  : entities.xml + exportDescriptor.properties
+_EXPORT_MARKERS = {
+    "jira": ("entities.xml", "activeobjects.xml"),
+    "confluence": ("entities.xml", "exportDescriptor.properties"),
+}
+
+
+def verify_export(zip_path: Path, product: str) -> tuple[bool, str]:
+    """
+    Sanity-check a freshly downloaded export before it's archived/uploaded.
+
+    Returns (ok, message). ok=False means the file is clearly NOT a backup (not a
+    ZIP / empty / corrupt) and the caller should fail. ok=True with a message that
+    starts "WARNING:" means it IS a ZIP but is missing the entries Atlassian's
+    import expects — surfaced so you find out now, not at restore time.
+    """
+    if not zipfile.is_zipfile(zip_path):
+        head = b""
+        try:
+            head = zip_path.read_bytes()[:80]
+        except OSError:
+            pass
+        return False, (f"not a ZIP archive (starts with {head!r}) — likely an error/"
+                       f"login page or a truncated download, not a {product} export")
+    try:
+        with zipfile.ZipFile(zip_path) as zf:
+            names = zf.namelist()
+            bad = zf.testzip()
+    except zipfile.BadZipFile as exc:
+        return False, f"corrupt ZIP: {exc}"
+    if bad is not None:
+        return False, f"corrupt entry in ZIP: {bad}"
+    if not names:
+        return False, "ZIP is empty"
+
+    markers = _EXPORT_MARKERS.get(product, ())
+    basenames = {n.rsplit("/", 1)[-1] for n in names}
+    missing = [m for m in markers if m not in basenames]
+    if "entities.xml" in missing:
+        return True, (f"WARNING: valid ZIP but no entities.xml among {len(names)} "
+                      f"entries — may be rejected on import as a {product} backup")
+    found = [m for m in markers if m in basenames]
+    return True, f"valid {product} export ({len(names)} entries; found {found})"
 
 
 def sha256_file(path: Path, chunk: int = 1 << 20) -> str:
