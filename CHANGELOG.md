@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.14.1] - 2026-05-28
+
+### Added
+- **Docs: notification / email (SMTP) setup & troubleshooting.** Added a "Notifications" section to `docs/TROUBLESHOOTING.md` covering the common email failures — a wrong `SMTP_HOST` surfacing as a connection timeout (e.g. `smtp.google.com` instead of `smtp.gmail.com`), App Password requirements for Gmail / MFA-enabled Microsoft 365, and matching the port to the encryption mode (465 = implicit SSL, 587 = STARTTLS) — plus a common-provider settings table (Gmail / Microsoft 365 / Amazon SES). Cross-linked from `.env.example` and the README notification-channels table.
+
+---
+
 ## [0.14.0] - 2026-05-28
 
 ### Added

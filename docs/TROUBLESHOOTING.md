@@ -46,6 +46,28 @@ The bucket/container must exist beforehand — this tool uploads into it, it doe
 not create it. Objects are written to `<dest>/YYYY/MM/` by default (configurable
 via `STORAGE_LAYOUT`).
 
+## Notifications (email / Slack / webhook)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Email: `WinError 10060` / `Connection timed out` / `getaddrinfo failed` | `SMTP_HOST` is wrong, or the SMTP port is blocked outbound | Use your provider's **real** SMTP host — `smtp.gmail.com` (not `smtp.google.com`), `smtp.office365.com`, `email-smtp.<region>.amazonaws.com`. Confirm the host:port is reachable from the machine/agent (firewall / egress). |
+| Email: `SMTPAuthenticationError` / `Username and Password not accepted` | Using the normal account password where an app-specific one is required | Gmail and MFA-enabled Microsoft 365 need an **App Password**, not your login password — generate one and put it in `SMTP_PASSWORD`. |
+| Email: `SSLError` / `wrong version number`, or it hangs on send | Port ↔ encryption mismatch | **465 = implicit SSL** (auto-selected when `SMTP_PORT=465`); **587 = STARTTLS** (`SMTP_STARTTLS=true`). Match the port to the mode. |
+| Chat / Slack / Teams / Discord: nothing arrives, build stays green | A notification failure is logged but never fails the build (by design) | Look for `notify failed (non-fatal)` in the log; verify `NOTIFY_WEBHOOK_URL` and that the channel is in `NOTIFY_CHANNELS`. |
+| Webhook configured but no message | The channel isn't listed in `NOTIFY_CHANNELS` | The URL fires only for channels you list — add e.g. `google-chat` or `webhook` to `NOTIFY_CHANNELS`. |
+
+**Common SMTP settings**
+
+| Provider | Host | Port | Notes |
+|---|---|---|---|
+| Gmail / Google Workspace | `smtp.gmail.com` | 465 (SSL) or 587 (STARTTLS) | **App Password** required (Account → Security → App passwords) |
+| Microsoft 365 / Outlook | `smtp.office365.com` | 587 (STARTTLS) | App Password if MFA is enabled |
+| Amazon SES | `email-smtp.<region>.amazonaws.com` | 587 (STARTTLS) | Use SES **SMTP** credentials, not your AWS keys |
+
+In Jenkins these come from the `smtp-host/from/to/user/password` credentials (set by
+the export); locally they're the `SMTP_*` vars in `.env`. A send failure never fails
+the build — the pipeline only logs it.
+
 ## Archive / environment
 
 | Symptom | Cause | Fix |

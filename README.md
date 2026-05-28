@@ -185,6 +185,8 @@ Set `STORAGE_PROVIDER` + `STORAGE_DEST` (or `--provider` / `--dest`). Only the c
 | `email` | `SMTP_*` | stdlib SMTP; port 465 → SSL, else STARTTLS |
 | `webhook` | `NOTIFY_WEBHOOK_URL` | raw JSON POST (PagerDuty / Opsgenie / your API) |
 
+> **Email tip:** use your provider's real SMTP host (e.g. `smtp.gmail.com`, `smtp.office365.com`) — a wrong host shows up as a connection timeout — and an **App Password** for Gmail or MFA-enabled Microsoft 365. Settings table + fixes in [TROUBLESHOOTING](docs/TROUBLESHOOTING.md).
+
 ---
 
 ## Archiving: encryption, compression, names
