@@ -356,6 +356,24 @@ def do_configure(cfg: config.Config) -> None:
         "path like C:\\...\\python.exe if 'python' isn't on the service PATH)",
         _pref(cfg.python_bin))
 
+    # ── Jenkins job source (advanced) ──
+    ui.section("Jenkins job source (advanced)")
+    ui.info("Where Jenkins pulls THIS tool's code from each build. Blank = the public")
+    ui.info("GitHub repo on master. Override to decouple the build from GitHub:")
+    ui.info("  - private mirror:   https://gitlab.yourco/team/atlassian-backup.git")
+    ui.info("  - download once / offline: file:///srv/jenkins/atlassian-backup (a local clone)")
+    ui.info("  - pin a version:    set the ref below to e.g. refs/tags/v0.14.0")
+    cfg.jenkins_repo_url = ui.prompt("Repo URL (blank = built-in GitHub repo)",
+                                     _pref(cfg.jenkins_repo_url))
+    if cfg.jenkins_repo_url:
+        cfg.jenkins_branch = ui.prompt(
+            "Branch / ref (e.g. */master, */main, or refs/tags/v0.14.0)",
+            cfg.jenkins_branch or "*/master")
+        if not cfg.jenkins_repo_url.lower().startswith("file:"):
+            cfg.jenkins_repo_credentials_id = ui.prompt(
+                "Jenkins credentials ID for a PRIVATE mirror (blank = public/anonymous)",
+                _pref(cfg.jenkins_repo_credentials_id))
+
     # ── Pipeline behaviour ──
     ui.section("Pipeline behaviour")
     ui.info("How the Jenkins pipeline reacts to each outcome:")

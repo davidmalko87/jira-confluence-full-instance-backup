@@ -185,6 +185,8 @@ Set `STORAGE_PROVIDER` + `STORAGE_DEST` (or `--provider` / `--dest`). Only the c
 | `email` | `SMTP_*` | stdlib SMTP; port 465 → SSL, else STARTTLS |
 | `webhook` | `NOTIFY_WEBHOOK_URL` | raw JSON POST (PagerDuty / Opsgenie / your API) |
 
+> **Email tip:** use your provider's real SMTP host (e.g. `smtp.gmail.com`, `smtp.office365.com`) — a wrong host shows up as a connection timeout — and an **App Password** for Gmail or MFA-enabled Microsoft 365. Settings table + fixes in [TROUBLESHOOTING](docs/TROUBLESHOOTING.md).
+
 ---
 
 ## Archiving: encryption, compression, names
@@ -247,6 +249,20 @@ Create a **Pipeline** job → *Pipeline script from SCM* → Git → this repo �
 | `smtp-host/from/to/user/password` | Secret text | `email` channel |
 
 No secrets live in the repo — they stay in the Jenkins Credentials store.
+
+### Use your own repo, run offline, or pin a version
+
+By default the job clones this tool from the **public GitHub repo on `master`**, fresh on every build. If GitHub being reachable at build time is a concern — it could be removed, rate-limited, or blocked on a locked-down network — or you simply want to lock to a known version, repoint the job at a source you control. Nothing in the pipeline needs GitHub specifically: `checkout scm` clones whatever remote the job is configured with.
+
+Set these in **Configure → "Jenkins job source"** (or in `.env`) **before** running the export, and the generated `jenkins-setup.groovy` wires them into the job:
+
+| Goal | Setting(s) | Example |
+|---|---|---|
+| **Mirror to your own GitLab / Bitbucket** (keep it internal) | `JENKINS_REPO_URL` (+ `JENKINS_REPO_CREDENTIALS_ID` if private) | `https://gitlab.yourco/team/atlassian-backup.git` |
+| **Download once, reuse offline** — clone to the Jenkins box; no internet at build time, GitHub can vanish | `JENKINS_REPO_URL` = a local `file://` path | `file:///srv/jenkins/atlassian-backup` |
+| **Pin a version** instead of always-latest `master` | `JENKINS_BRANCH` = a tag or commit | `refs/tags/v0.14.0` |
+
+For a **private** mirror, create a Jenkins credential (username + token, or an SSH deploy key) and put its **ID** in `JENKINS_REPO_CREDENTIALS_ID` — the secret stays in Jenkins, never in a file or the URL. No `Jenkinsfile` change is needed, and the export updates the job in place, so changing the source later is just: set the values → re-export → paste. Full walkthrough (including the one-time `git clone` for the offline case and how to update a pinned clone): [docs/JENKINS_SETUP.md → "Use your own repo / run offline / pin a version"](docs/JENKINS_SETUP.md).
 
 ---
 

@@ -34,6 +34,9 @@ SPEC = [
     ("on_no_backup",         "ON_NO_BACKUP",                     False, "default"),
     ("on_upload_failure",    "ON_UPLOAD_FAILURE",                False, "default"),
     ("python_bin",           "PYTHON_BIN",                       False, ""),
+    ("jenkins_repo_url",     "JENKINS_REPO_URL",                 False, ""),
+    ("jenkins_branch",       "JENKINS_BRANCH",                   False, ""),
+    ("jenkins_repo_credentials_id", "JENKINS_REPO_CREDENTIALS_ID", False, ""),
     ("storage_provider",     "STORAGE_PROVIDER",                 False, "local"),
     ("storage_dest",         "STORAGE_DEST",                     False, ""),
     ("storage_layout",       "STORAGE_LAYOUT",                   False, "year-month"),
@@ -81,6 +84,9 @@ class Config:
     on_no_backup: str = "default"
     on_upload_failure: str = "default"
     python_bin: str = ""
+    jenkins_repo_url: str = ""
+    jenkins_branch: str = ""
+    jenkins_repo_credentials_id: str = ""
     storage_provider: str = "local"
     storage_dest: str = ""
     storage_layout: str = "year-month"
