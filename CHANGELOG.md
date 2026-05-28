@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.14.1] - 2026-05-28
+
+### Added
+- **Docs: notification / email (SMTP) setup & troubleshooting.** Added a "Notifications" section to `docs/TROUBLESHOOTING.md` covering the common email failures — a wrong `SMTP_HOST` surfacing as a connection timeout (e.g. `smtp.google.com` instead of `smtp.gmail.com`), App Password requirements for Gmail / MFA-enabled Microsoft 365, and matching the port to the encryption mode (465 = implicit SSL, 587 = STARTTLS) — plus a common-provider settings table (Gmail / Microsoft 365 / Amazon SES). Cross-linked from `.env.example` and the README notification-channels table.
+
+---
+
+## [0.14.0] - 2026-05-28
+
+### Added
+- **Configurable Jenkins job source — decouple the build from GitHub.** The pipeline job no longer has to clone the public GitHub repo on every build. Three new settings — **`JENKINS_REPO_URL`**, **`JENKINS_BRANCH`**, and **`JENKINS_REPO_CREDENTIALS_ID`** — let the generated `jenkins-setup.groovy` point the job at any Git source: a **private mirror** (GitLab/Bitbucket, with a Jenkins credential ID for auth so the secret stays in Jenkins), a local **`file://` clone** (clone once, reuse offline — no internet or GitHub dependency at build time), or a **pinned tag / commit** (`refs/tags/v0.14.0`) instead of always-latest `master`. Surfaced in `Configure → "Jenkins job source"` (advanced; blank = the built-in GitHub repo), and documented in the README, `.env.example`, and the Jenkins setup guide. No `Jenkinsfile` change — `checkout scm` already clones whatever remote the job is configured with.
+
+---
+
 ## [0.13.0] - 2026-05-27
 
 ### Added

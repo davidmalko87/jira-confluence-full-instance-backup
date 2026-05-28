@@ -81,7 +81,7 @@ def jobName = "%%JOB%%"
 def job = jenkins.getItemByFullName(jobName, WorkflowJob)
 if (job == null) { job = jenkins.createProject(WorkflowJob, jobName) }
 def scm = new GitSCM(
-    GitSCM.createRepoList("%%REPO%%", null),
+    GitSCM.createRepoList("%%REPO%%", %%CREDID%%),
     [new BranchSpec("%%BRANCH%%")],
     null, null, []
 )
@@ -97,9 +97,20 @@ println("the generated jenkins-setup.groovy file — it contains secrets.")
 """
 
 
-def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JOB,
-          branch: str = DEFAULT_BRANCH) -> tuple[str, list[str]]:
-    """Return (groovy_script, summary). Summary lists what gets created (no secrets)."""
+def build(cfg: config.Config, *, repo: str | None = None, job: str = DEFAULT_JOB,
+          branch: str | None = None) -> tuple[str, list[str]]:
+    """Return (groovy_script, summary). Summary lists what gets created (no secrets).
+
+    Repo URL + branch default to the public GitHub repo on master, but are
+    overridable via JENKINS_REPO_URL / JENKINS_BRANCH so the job can pull from a
+    private mirror (GitLab/Bitbucket), a local ``file://`` clone (download once,
+    reuse offline — no GitHub dependency at build time), or a pinned tag
+    (e.g. ``refs/tags/v0.14.0``). JENKINS_REPO_CREDENTIALS_ID names a Jenkins
+    credential for a private mirror (blank = anonymous / public / file://).
+    """
+    repo = repo or (cfg.jenkins_repo_url or "").strip() or DEFAULT_REPO
+    branch = branch or (cfg.jenkins_branch or "").strip() or DEFAULT_BRANCH
+    cred_id = (cfg.jenkins_repo_credentials_id or "").strip()
     creds: list[str] = []
     summary: list[str] = []
 
@@ -195,13 +206,16 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
             env_block.append(f'ev.put("{key}", b64d(\'{_b64(val)}\')); println("  env: {key}")')
             summary.append(f"global env {key} = {val}")
 
+    cred_literal = f'"{cred_id}"' if cred_id else "null"
     groovy = (_TEMPLATE
               .replace("%%CRED_BLOCK%%", "\n".join(creds))
               .replace("%%ENV_BLOCK%%", "\n".join(env_block))
               .replace("%%JOB%%", job)
               .replace("%%REPO%%", repo)
+              .replace("%%CREDID%%", cred_literal)
               .replace("%%BRANCH%%", branch))
-    summary.append(f"pipeline job: {job}  ->  {repo}  ({branch})")
+    src = repo if not cred_id else f"{repo} (creds id: {cred_id})"
+    summary.append(f"pipeline job: {job}  ->  {src}  ({branch})")
     return groovy, summary
 
 
