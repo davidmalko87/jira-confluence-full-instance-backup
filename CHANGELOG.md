@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.13.0] - 2026-05-27
+
+### Added
+- **Customizable notification text + richer variables.** Notifications now carry **products**, **date**, item **count**, and **total size** (pulled from the manifests) alongside the existing status / timestamp / archive list / build URL / warnings — surfaced in every channel. Two new optional settings let you reword messages without editing code: **`NOTIFY_SUBJECT_TEMPLATE`** (email subject) and **`NOTIFY_BODY_TEMPLATE`** (Slack / webhook / email body), using `{status} {icon} {date} {time} {products} {count} {size} {archives} {build_url} {warnings}` placeholders. The card channels (Google Chat / Discord / Teams) gain enriched **Products** and per-archive **count + size** fields. The webhook JSON now includes `date`, `products`, `count`, and `total_size_mb`. Carried to Jenkins as global env vars by the export; documented in `.env.example`.
+
+---
+
 ## [0.12.1] - 2026-05-27
 
 ### Added
@@ -242,6 +249,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.13.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.13.0
 [0.12.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.12.1
 [0.12.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.12.0
 [0.11.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.2

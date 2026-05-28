@@ -45,6 +45,8 @@ SPEC = [
     ("azure_conn",           "AZURE_STORAGE_CONNECTION_STRING",  True,  ""),
     ("notify_channels",      "NOTIFY_CHANNELS",                  False, ""),
     ("notify_webhook_url",   "NOTIFY_WEBHOOK_URL",               True,  ""),
+    ("notify_subject_template", "NOTIFY_SUBJECT_TEMPLATE",       False, ""),
+    ("notify_body_template",    "NOTIFY_BODY_TEMPLATE",          False, ""),
     ("smtp_host",            "SMTP_HOST",                        False, ""),
     ("smtp_port",            "SMTP_PORT",                        False, "587"),
     ("smtp_starttls",        "SMTP_STARTTLS",                    False, "true"),
@@ -90,6 +92,8 @@ class Config:
     azure_conn: str = ""
     notify_channels: str = ""
     notify_webhook_url: str = ""
+    notify_subject_template: str = ""
+    notify_body_template: str = ""
     smtp_host: str = ""
     smtp_port: str = "587"
     smtp_starttls: str = "true"
