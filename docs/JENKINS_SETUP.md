@@ -339,6 +339,36 @@ Fastest refresh (validated):
 
 Or update it by hand: Manage Jenkins → Credentials → `jira-cookies` → Update.
 
+### Changing config, credentials, or notifications later (no teardown)
+
+The generated `jenkins-setup.groovy` is **idempotent** — re-running it updates
+things in place and never deletes:
+- credentials are matched by ID and **updated** (or added if new),
+- global env vars (`SITE_*`, `STORAGE_*`, `NOTIFY_CHANNELS`, `FAILURE_POLICY`, …)
+  are overwritten/added,
+- the pipeline job is **updated in place** — its build history is preserved.
+
+So to change anything (rotate a credential, switch notification channels, change
+storage…): `python main.py` → **Configure** (make the change) → **Export Jenkins
+setup** → paste the new `jenkins-setup.groovy` into **Script Console → Run** →
+delete the generated file. You do **not** delete or recreate the job.
+
+Lighter paths when you change only one thing:
+- **Jira cookies only** → `python main.py --refresh-cookies` →
+  `update-jira-cookies.groovy` (touches *only* the `jira-cookies` credential).
+- **A single credential** → edit it directly in Manage Jenkins → Credentials.
+- **A one-off run** with different options → Build with Parameters (per-run only;
+  scheduled builds use the global-env defaults).
+
+Example — switch email to a webhook: Configure → set notify channels to
+`webhook` (it prompts for the URL) → Export → Script Console. This upserts the
+`notify-webhook-url` credential and sets `NOTIFY_CHANNELS=webhook`. Two caveats:
+the old `smtp-*` credentials simply go **unused** (harmless — the Notify stage
+only binds them when `NOTIFY_CHANNELS` includes `email`; delete them for
+tidiness), and the export **sets** env vars but never **removes** them — so
+switching to a new non-empty value overwrites cleanly, but clearing a setting to
+empty must be done by hand.
+
 ### Retention / rotation (delete old backups)
 
 This tool **only ever writes** — by design it never deletes from your store. The
@@ -374,11 +404,22 @@ directly to "keep the last N days".
 | Upload | storage credential (provider-specific) | 403 = missing write permission |
 | Notify | `notify-webhook-url` and/or `smtp-*` | bad webhook/SMTP (non-fatal) |
 
+### How your code reaches the agent (and what's left behind)
+
+- The repo is **cloned fresh into the agent workspace on every build** — the
+  `Setup` stage runs `checkout scm` each run (not just the first); the
+  `Jenkinsfile` itself is also fetched "lightweight" by the controller to parse
+  the pipeline before the build starts.
+- `post { cleanup { cleanWs() } }` **wipes the workspace after every build** — the
+  clone, the venv, the downloaded backups, and the archive are all deleted.
+  Nothing persists on the agent; the **only** durable copy is what was uploaded
+  to your storage. (Upside: every run uses the latest committed code, and no
+  secrets or backup content linger on the agent.)
+- The setup / cookie-refresh **Groovy runs once on the controller** via Script
+  Console — it is never stored on the agent. Delete your local copy after pasting.
+
 ### Notes
 
-- `cleanWs()` wipes the workspace after each build — **the uploaded archive in
-  your object store is the only persistence.** Confirm the Upload stage
-  succeeded.
 - Secrets never live in the repo; they stay in the Jenkins Credentials store and
   are bound at runtime via `withCredentials`.
 
