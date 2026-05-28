@@ -25,7 +25,7 @@ from pathlib import Path
 
 import requests
 
-from . import jira
+from . import jira, manifest
 
 # Warn in the notification when the Jira session cookie is within this many days
 # of expiry, so operators refresh it before a backup fails.
@@ -34,11 +34,15 @@ COOKIE_WARN_DAYS = 7
 
 @dataclass
 class BackupReport:
-    status: str                       # "success" | "failure"
+    status: str                       # "success" | "unstable" | "failure"
     timestamp: str
+    date: str = ""                    # YYYY-MM-DD
     archives: list[tuple[str, float]] = field(default_factory=list)  # (name, MB)
+    products: list[str] = field(default_factory=list)                # e.g. ["jira"]
     build_url: str = ""
     warnings: list[str] = field(default_factory=list)
+    subject_template: str = ""        # NOTIFY_SUBJECT_TEMPLATE (blank = default)
+    body_template: str = ""           # NOTIFY_BODY_TEMPLATE (blank = default)
 
     @property
     def ok(self) -> bool:
@@ -66,18 +70,69 @@ class BackupReport:
         """Teams themeColor: green / amber / red."""
         return "0F9D58" if self.ok else ("F4B400" if self.unstable else "DB4437")
 
+    @property
+    def count(self) -> int:
+        return len(self.archives)
+
+    @property
+    def total_mb(self) -> float:
+        return sum(mb for _, mb in self.archives)
+
+    @property
+    def products_str(self) -> str:
+        return ", ".join(self.products) if self.products else "—"
+
+    @property
+    def size_str(self) -> str:
+        return f"{self.total_mb:.1f} MB"
+
     def archive_lines(self) -> list[str]:
         return [f"{name} — {mb:.1f} MB" for name, mb in self.archives]
 
+    def _tokens(self) -> dict:
+        """Placeholders for NOTIFY_SUBJECT_TEMPLATE / NOTIFY_BODY_TEMPLATE."""
+        return {
+            "{status}": self.status,
+            "{icon}": self.icon,
+            "{date}": self.date,
+            "{time}": self.timestamp,
+            "{products}": self.products_str,
+            "{count}": str(self.count),
+            "{size}": self.size_str,
+            "{archives}": "; ".join(self.archive_lines()) or "(none)",
+            "{build_url}": self.build_url,
+            "{warnings}": "; ".join(self.warnings) or "(none)",
+        }
+
+    def _render(self, template: str) -> str:
+        out = template
+        for token, value in self._tokens().items():
+            out = out.replace(token, value)
+        return out
+
+    def subject(self) -> str:
+        """Email subject: NOTIFY_SUBJECT_TEMPLATE if set, else the default."""
+        if self.subject_template:
+            return self._render(self.subject_template)
+        return f"{self.icon} Atlassian Backup — {self.status.upper()} ({self.date})"
+
+    def body(self) -> str:
+        """Message body: NOTIFY_BODY_TEMPLATE if set, else the default summary."""
+        if self.body_template:
+            return self._render(self.body_template)
+        return self.summary_text()
+
     def summary_text(self) -> str:
-        """Plain-text body shared by slack/discord/teams/email/webhook."""
+        """Default plain-text body (used when NOTIFY_BODY_TEMPLATE is unset)."""
         lines = [
             f"{self.icon} Atlassian Weekly Backup — {self.status.upper()}",
             f"Time: {self.timestamp}",
+            f"Products: {self.products_str}",
         ]
         if self.archives:
             lines.append("Archives:")
             lines += [f"  • {ln}" for ln in self.archive_lines()]
+            lines.append(f"Total: {self.count} file(s), {self.size_str}")
         else:
             lines.append("Archives: (none found)")
         if self.build_url:
@@ -103,13 +158,34 @@ def _cookie_warnings() -> list[str]:
 
 
 def build_report(status: str, archive_dir: Path, build_url: str) -> BackupReport:
-    now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+    now = datetime.now(timezone.utc)
     archives: list[tuple[str, float]] = []
     if archive_dir.exists():
         for a in sorted(archive_dir.glob("*.7z")):
             archives.append((a.name, a.stat().st_size / (1024 * 1024)))
-    return BackupReport(status=status, timestamp=now, archives=archives,
-                        build_url=build_url, warnings=_cookie_warnings())
+    # Products: prefer the manifests' recorded products; fall back to inferring
+    # from the archive filenames.
+    products: list[str] = []
+    for man in manifest.read_all(archive_dir):
+        for p in man.get("products", []):
+            if p not in products:
+                products.append(p)
+    if not products:
+        for name, _ in archives:
+            for p in ("jira", "confluence"):
+                if p in name.lower() and p not in products:
+                    products.append(p)
+    return BackupReport(
+        status=status,
+        timestamp=now.strftime("%Y-%m-%d %H:%M UTC"),
+        date=now.strftime("%Y-%m-%d"),
+        archives=archives,
+        products=products,
+        build_url=build_url,
+        warnings=_cookie_warnings(),
+        subject_template=os.environ.get("NOTIFY_SUBJECT_TEMPLATE", ""),
+        body_template=os.environ.get("NOTIFY_BODY_TEMPLATE", ""),
+    )
 
 
 # ── Channel renderers — each raises on failure, returns None on success ──
@@ -124,11 +200,12 @@ def send_google_chat(report: BackupReport, url: str) -> None:
     widgets = [
         {"decoratedText": {"topLabel": "Status",
                            "text": f"<b>{report.icon} {report.status.upper()}</b>"}},
-        {"decoratedText": {"topLabel": "Timestamp", "text": report.timestamp}},
+        {"decoratedText": {"topLabel": "Date", "text": report.timestamp}},
+        {"decoratedText": {"topLabel": "Products", "text": report.products_str}},
     ]
     if report.archives:
         widgets.append({"decoratedText": {
-            "topLabel": "Archives",
+            "topLabel": f"Archives ({report.count}, {report.size_str})",
             "text": "<br>".join(report.archive_lines()), "wrapText": True}})
     for w in report.warnings:
         widgets.append({"decoratedText": {"topLabel": "Warning",
@@ -144,15 +221,16 @@ def send_google_chat(report: BackupReport, url: str) -> None:
 
 
 def send_slack(report: BackupReport, url: str) -> None:
-    _post_json(url, {"text": report.summary_text()})
+    _post_json(url, {"text": report.body()})
 
 
 def send_discord(report: BackupReport, url: str) -> None:
     fields = [{"name": "Status", "value": f"{report.icon} {report.status.upper()}",
                "inline": True},
-              {"name": "Time", "value": report.timestamp, "inline": True}]
+              {"name": "Date", "value": report.timestamp, "inline": True},
+              {"name": "Products", "value": report.products_str, "inline": True}]
     if report.archives:
-        fields.append({"name": "Archives",
+        fields.append({"name": f"Archives ({report.count}, {report.size_str})",
                        "value": "\n".join(report.archive_lines())})
     if report.warnings:
         fields.append({"name": "⚠ Warning", "value": "\n".join(report.warnings)})
@@ -166,9 +244,11 @@ def send_discord(report: BackupReport, url: str) -> None:
 
 def send_teams(report: BackupReport, url: str) -> None:
     facts = [{"name": "Status", "value": f"{report.icon} {report.status.upper()}"},
-             {"name": "Time", "value": report.timestamp}]
+             {"name": "Date", "value": report.timestamp},
+             {"name": "Products", "value": report.products_str}]
     if report.archives:
-        facts.append({"name": "Archives", "value": "; ".join(report.archive_lines())})
+        facts.append({"name": f"Archives ({report.count}, {report.size_str})",
+                      "value": "; ".join(report.archive_lines())})
     if report.warnings:
         facts.append({"name": "Warning", "value": "; ".join(report.warnings)})
     card = {
@@ -189,10 +269,14 @@ def send_webhook(report: BackupReport, url: str) -> None:
     _post_json(url, {
         "status": report.status,
         "timestamp": report.timestamp,
+        "date": report.date,
+        "products": report.products,
+        "count": report.count,
+        "total_size_mb": round(report.total_mb, 1),
         "archives": [{"name": n, "size_mb": round(mb, 1)} for n, mb in report.archives],
         "build_url": report.build_url,
         "warnings": report.warnings,
-        "text": report.summary_text(),
+        "text": report.body(),
     })
 
 
@@ -209,10 +293,10 @@ def send_email(report: BackupReport, _url: str) -> None:
     use_starttls = os.environ.get("SMTP_STARTTLS", "true").lower() != "false"
 
     msg = EmailMessage()
-    msg["Subject"] = f"{report.icon} Atlassian Backup — {report.status.upper()}"
+    msg["Subject"] = report.subject()
     msg["From"] = sender
     msg["To"] = recipients
-    msg.set_content(report.summary_text())
+    msg.set_content(report.body())
 
     if port == 465:
         with smtplib.SMTP_SSL(host, port, timeout=30) as s:

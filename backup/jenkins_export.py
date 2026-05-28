@@ -156,6 +156,8 @@ def build(cfg: config.Config, *, repo: str = DEFAULT_REPO, job: str = DEFAULT_JO
                      ("S3_ENDPOINT_URL", cfg.s3_endpoint_url),
                      ("AWS_DEFAULT_REGION", cfg.aws_default_region),
                      ("NOTIFY_CHANNELS", cfg.notify_channels),
+                     ("NOTIFY_SUBJECT_TEMPLATE", cfg.notify_subject_template),
+                     ("NOTIFY_BODY_TEMPLATE", cfg.notify_body_template),
                      ("PRODUCT_NAME_TEMPLATE", cfg.product_name_template),
                      ("ARCHIVE_NAME_TEMPLATE", cfg.archive_name_template),
                      ("ARCHIVE_COMPRESSION", cfg.archive_compression),
