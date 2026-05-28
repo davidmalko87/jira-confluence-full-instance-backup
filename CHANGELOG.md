@@ -6,6 +6,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [0.12.1] - 2026-05-27
+
+### Added
+- **Docs: "Changing config, credentials, or notifications later (no teardown)"** — documents that the generated `jenkins-setup.groovy` is idempotent (credentials updated-by-ID, global env overwritten, the job updated **in place** with history preserved), so changing creds / switching notification channels / etc. never requires deleting or recreating the job. Includes the lighter paths (`--refresh-cookies`, single-credential UI edit, per-run Build-with-Parameters) and a worked email→webhook example.
+- **Docs: "How your code reaches the agent"** — clarifies that the repo is cloned fresh into the agent workspace on **every** build (not just the first), the workspace is wiped by `cleanWs()` afterward (only the uploaded archive persists), and the setup Groovy runs once on the controller via Script Console (never stored on the agent).
+
+---
+
 ## [0.12.0] - 2026-05-27
 
 ### Added
@@ -234,6 +242,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 - **Connection test** with Jira session-token (JWT) expiry warning.
 - `rich`-optional, ASCII-safe console output (safe on legacy Windows consoles).
 
+[0.12.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.12.1
 [0.12.0]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.12.0
 [0.11.2]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.2
 [0.11.1]: https://github.com/davidmalko87/jira-confluence-full-instance-backup/releases/tag/v0.11.1
