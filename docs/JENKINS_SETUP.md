@@ -418,6 +418,53 @@ directly to "keep the last N days".
 - The setup / cookie-refresh **Groovy runs once on the controller** via Script
   Console — it is never stored on the agent. Delete your local copy after pasting.
 
+### Use your own repo / run offline / pin a version (decouple from GitHub)
+
+By default the job clones this tool from the public GitHub repo on `master`. If
+GitHub being reachable at build time is a problem — it could be removed, rate-
+limited, or blocked on a locked-down network — repoint the job at a source you
+control. Nothing in the pipeline needs GitHub specifically: `checkout scm` clones
+whatever remote the job is configured with.
+
+Set these in **Configure → "Jenkins job source"** (or in `.env`) *before* exporting,
+and the generated `jenkins-setup.groovy` wires them into the job:
+
+| Setting | Env var | Example |
+|---|---|---|
+| Repo URL | `JENKINS_REPO_URL` | `https://gitlab.yourco/team/atlassian-backup.git` |
+| Branch / ref | `JENKINS_BRANCH` | `*/master`, `*/main`, or `refs/tags/v0.14.0` |
+| Credentials ID (private mirror) | `JENKINS_REPO_CREDENTIALS_ID` | `gitlab-deploy-key` |
+
+Three common patterns:
+
+- **Mirror to your own GitLab / Bitbucket.** Fork/push this repo to an internal
+  Git server and set `JENKINS_REPO_URL` to it. For a **private** mirror, create a
+  Jenkins credential (username + token, or an SSH deploy key) and put its **ID**
+  in `JENKINS_REPO_CREDENTIALS_ID` — the secret stays in Jenkins, never in a file
+  or the URL.
+- **Download once, reuse offline.** Clone the repo a single time onto the Jenkins
+  box and point the job at it with a `file://` URL — no internet at build time and
+  no dependency on GitHub staying up:
+
+  ```bash
+  git clone https://github.com/davidmalko87/jira-confluence-full-instance-backup.git \
+      /srv/jenkins/atlassian-backup
+  # then set: JENKINS_REPO_URL=file:///srv/jenkins/atlassian-backup
+  ```
+
+  On Windows use forward slashes, e.g. `file:///C:/jenkins/atlassian-backup`. The
+  path must exist on whichever node runs the build (a single-node controller, or
+  every agent that may run it). To **update or pin**, check that clone out to the
+  ref you want — `git -C /srv/jenkins/atlassian-backup fetch && git checkout v0.14.0`.
+- **Pin a version instead of always-latest `master`.** Set `JENKINS_BRANCH` to a
+  tag (`refs/tags/v0.14.0`) or a commit SHA, so the job builds exactly that
+  revision and never drifts when new commits land. Upgrade deliberately by bumping
+  the tag and re-exporting (or editing the job's ref).
+
+> The export updates the job **in place**, so changing the source later is just:
+> set the values → re-run the export → paste the Groovy. You can also edit
+> **Job → Configure → Pipeline → SCM** directly in the Jenkins UI.
+
 ### Notes
 
 - Secrets never live in the repo; they stay in the Jenkins Credentials store and
