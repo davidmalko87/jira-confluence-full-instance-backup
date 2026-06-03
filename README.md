@@ -9,6 +9,7 @@
 [![Confluence Cloud](https://img.shields.io/badge/Confluence-Cloud-172B4D.svg?logo=confluence&logoColor=white)](https://www.atlassian.com/software/confluence)
 [![Storage](https://img.shields.io/badge/storage-GCS%20%7C%20S3%20%7C%20Azure%20%7C%20local-success.svg)](#storage-backends)
 [![Notify](https://img.shields.io/badge/notify-Chat%20%7C%20Slack%20%7C%20Teams%20%7C%20email%20%7C%20webhook-success.svg)](#notification-channels)
+[![Restore: round-trip verified](https://img.shields.io/badge/restore-round--trip%20verified-brightgreen.svg)](docs/RESTORE.md)
 [![Last commit](https://img.shields.io/github/last-commit/davidmalko87/jira-confluence-full-instance-backup.svg)](https://github.com/davidmalko87/jira-confluence-full-instance-backup/commits/master)
 
 Automated **full-instance backup** of **Jira Cloud** and **Confluence Cloud** for

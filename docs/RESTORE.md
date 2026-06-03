@@ -1,5 +1,7 @@
 # Restoring a backup
 
+![Jira restore: round-trip verified](https://img.shields.io/badge/Jira%20restore-round--trip%20verified%20(2026--06--03)-brightgreen.svg)
+
 This project produces **full-instance** backups (the same files Atlassian's own
 Backup Manager / export produces) and stores them safely off-platform. Restore
 itself is **manual**, through Atlassian's import UI — this tool does not restore.
@@ -26,20 +28,34 @@ you feed to Atlassian's importer.
 
 ## 2. Jira — ✅ verified end-to-end
 
-Restore via **Jira admin → System → Import and export → Import Jira Cloud**
-(`source=CLOUD`): upload the extracted `.zip`, Atlassian validates it, then runs
-the import.
+Restore via **Jira admin → System → Import and export → Import Jira cloud**
+(`/secure/admin/CloudImport!start.jspa?source=CLOUD`): pick **Import data**,
+upload the extracted `.zip` as the *data file*, Atlassian validates it, then you
+run the import. (Note: the legacy Server path `/secure/admin/Restore!default.jspa`
+is a **dead link** on Cloud — use *Import Jira cloud*.)
 
-> **Verified:** a backup produced by this tool was accepted by Jira Cloud's
-> importer — *"Import file successfully processed"* and *"we've checked your file
-> for issues, and everything looks good"* — with the correct source site and
-> timestamp read from the file, and it imported to completion (database, data,
-> plugins, attachments, users/groups).
+> **Verified live — 2026-06-03, Standard combined site.** A backup produced by
+> this tool was uploaded to *Import Jira cloud* as the data file (the per-product
+> `jira-<date>.zip` = `entities.xml` + `activeobjects.xml`). Atlassian's importer
+> validated it — *"We've checked your file for issues, and everything looks
+> good"* — reading the correct **source site** and **backup timestamp** from the
+> file, then ran the overwrite import to completion (`CloudImport!progress`).
+> Restore fidelity was then confirmed **issue-by-issue** via the REST API: every
+> item that existed at backup time came back (direct `GET /rest/api/3/issue/<key>`
+> → 200, e.g. `KAN-1`, `SAM1-1`), and every item created *after* the backup
+> timestamp was correctly **absent** (→ 404) — i.e. the site was restored to
+> exactly the backed-up point-in-time snapshot, no more and no less.
 
 Key points:
 - The import **overwrites** existing Jira data (projects, issues, attachments,
-  configuration). Users/groups are **merged** (you choose the merge behavior),
-  which can change their group membership/permissions — review before importing.
+  configuration) and reverts the site to the backup's **point in time** — anything
+  created *after* the backup is gone (verified above). Users/groups are **merged**
+  (you choose the merge behavior), which can change their group membership/
+  permissions — review before importing.
+- **Disable outgoing mail** on the import confirmation screen for a test/DR
+  restore, so the import doesn't blast notification emails to users.
+- The final **Run import** is a **destructive, UI-gated** step — there is no
+  API-token import path (the mirror of why the *backup* side needs cookies).
 - **Large instances:** Atlassian recommends splitting the export into a *data*
   file (`activeobjects.xml` + `entities.xml`) and a *media* file (attachments),
   with the `.xml` ≤ 20 GB (split media > 10 GB into 2–5 GB chunks). This is a
@@ -67,6 +83,16 @@ Our file is the official **`Site_Backup.zip`** from Confluence's *Backup manager
   artifact from the full `Site_Backup.zip`. So the full backup is your
   **whole-site DR / Server-migration** copy; for granular per-space restore into
   a live combined Cloud site you would use per-space exports.
+
+> **Confirmed live — 2026-06-03 (combined site).** The **Import Confluence spaces**
+> screen (Settings → … → *space import*) states plainly: *"Only space exports can
+> be imported."* It accepts a **single-space export**, not the full-site
+> `Site_Backup.zip` this tool produces — so on a combined Jira+Confluence Cloud
+> site the full Confluence backup is **not directly importable** through this UI.
+> The page also warns the import **triggers a site reindex**, **can't import
+> whiteboards** (content/layout lost), and may shift role-based access into
+> *"transition"* mode. For granular restore, use Confluence's own per-space export
+> as the import file.
 
 > You do **not** hand-edit or cherry-pick files out of `Site_Backup.zip` — where
 > full import is available, you upload the whole `.zip`.

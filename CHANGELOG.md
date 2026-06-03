@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.0.0] - 2026-06-03
+
+First stable release. The full **backup → restore round-trip is now verified end-to-end on a live Atlassian Cloud site**, and the codebase ships an offline test suite running in CI. The auth model (Jira cookie-UI + Confluence OBM) was re-confirmed working post the March-2026 Backup-Manager deprecation.
+
+### Added
+- **Offline `pytest` suite + CI.** 49 tests covering `manifest` (sha256 + `validate` + export-validity), `naming` templates, `config` `.env` parse + env precedence, `upload` target parsing/dispatch (+ a local-backend live-verify), and Jira cookie-blob parse + JWT expiry. CI runs `pytest -q` across Python 3.10–3.13, and a `dev` extra (`pip install -e ".[dev]"`) pulls pytest. No runtime code changed.
+- **Hardened `verify_export` coverage.** Tests prove a downloaded export that is an HTML error/login page, an empty file, a truncated zip, or a corrupt-entry zip is **rejected**, while genuine Jira (`entities.xml` + `activeobjects.xml`) and Confluence (multi-file) exports pass — and a valid-but-marker-less zip only WARNs.
+- **README: a "restore — round-trip verified" badge** linking to `docs/RESTORE.md`.
+
+### Changed
+- **`docs/RESTORE.md`: Jira restore round-trip VERIFIED LIVE (2026-06-03).** A backup this tool produced was uploaded to **Import Jira cloud**, validated clean by Atlassian's importer (*"everything looks good"*, correct source + timestamp), and the overwrite import run on a Standard **combined** site; restore fidelity was then confirmed **issue-by-issue** over the REST API — items present at backup time restored, items created *after* the backup correctly absent (exact point-in-time snapshot). The **Confluence** combined-site limitation was confirmed live too (*Import Confluence spaces* accepts only single-space exports, not the full-site `Site_Backup.zip`). Corrected the import path (the legacy Server `Restore!default.jspa` is a dead link on Cloud — use *Import Jira cloud*) and added the disable-outgoing-mail tip.
+
+---
+
 ## [0.14.1] - 2026-05-28
 
 ### Added
