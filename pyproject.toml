@@ -15,7 +15,7 @@ dependencies = [
     "requests>=2.31",
 ]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
@@ -37,6 +37,7 @@ all = [
     "azure-storage-blob>=12.19",
     "rich>=13.0",
 ]
+dev = ["pytest>=8.0"]
 
 [project.urls]
 Homepage = "https://github.com/davidmalko87/jira-confluence-full-instance-backup"
@@ -56,3 +57,7 @@ version = { attr = "backup.__version__" }
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
