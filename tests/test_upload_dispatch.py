@@ -68,3 +68,19 @@ def test_test_storage_unknown_provider():
     ok, msg = upload.test_storage("dropbox", "bucket")
     assert ok is False
     assert "unknown provider" in msg
+
+
+def test_combine_prefix_with_base():
+    assert upload._combine_prefix("my-org-backups", "2026/06") == "my-org-backups/2026/06"
+
+
+def test_combine_prefix_without_base():
+    assert upload._combine_prefix("", "2026/06") == "2026/06"
+
+
+def test_combine_prefix_strips_surrounding_slashes():
+    assert upload._combine_prefix("/team/backups/", "2026/06") == "team/backups/2026/06"
+
+
+def test_combine_prefix_base_only_flat_layout():
+    assert upload._combine_prefix("my-org-backups", "") == "my-org-backups"
