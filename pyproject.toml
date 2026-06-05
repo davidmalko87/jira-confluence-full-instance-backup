@@ -13,6 +13,7 @@ requires-python = ">=3.10"
 keywords = ["jira", "confluence", "backup", "atlassian", "atlassian-cloud", "jenkins", "gcs", "s3", "azure"]
 dependencies = [
     "requests>=2.31",
+    "py7zr>=0.20",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

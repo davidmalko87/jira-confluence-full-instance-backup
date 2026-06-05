@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.3.0] - 2026-06-06
+
+### Changed
+- **Pure-Python archiving (py7zr) — no external 7-Zip binary.** `backup/archive.py` previously shelled out to the `7z` binary (`subprocess`), so the build agent / container needed `p7zip-full` installed and `SEVEN_ZIP_PATH` configured. It now packs with **py7zr** (a new core dependency): store (`FILTER_COPY`) at level 0, LZMA2 at levels 1–9, and **AES-256 with encrypted headers** when a password is set (filenames hidden — verified that a header-encrypted archive can't be read without the password). The produced `.7z` files are standard and still open with any 7-Zip-compatible tool at restore time. This removes the only system-package dependency, so the tool runs in a bare `python:3.x` container with just `pip install`. New `tests/test_archive.py` covers store/LZMA2 round-trips, encryption (unreadable without the password), and per-product mode end-to-end (archive + manifest validate).
+
+---
+
 ## [1.2.0] - 2026-06-06
 
 ### Added

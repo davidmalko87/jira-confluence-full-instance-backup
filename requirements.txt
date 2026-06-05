@@ -4,3 +4,4 @@
 # (webhook/chat/email) need no extra deps — webhooks use requests, email
 # uses the stdlib.
 requests>=2.31.0
+py7zr>=0.20.0      # pure-Python .7z archiving (no external 7-Zip binary)

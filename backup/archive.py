@@ -1,5 +1,5 @@
 """
-Archive backup files with 7-Zip.
+Archive backup files into encrypted .7z — pure-Python via py7zr (no 7-Zip binary).
 
 Two layouts (ARCHIVE_MODE / --mode):
   per-product (default) — one .7z per product backup (jira-<date>.7z,
@@ -7,65 +7,71 @@ Two layouts (ARCHIVE_MODE / --mode):
       product you need directly; clear what's in storage.
   combined — a single .7z bundling everything in the input dir + one manifest.json.
 
-By default uses AES-256 with encrypted headers (-mhe=on), which hides filenames
-inside the archive — the right posture for cloud-stored backups. Encryption can
-be turned off (no password) and the compression level is configurable.
+By default uses AES-256 with encrypted headers, which hides the filenames inside
+the archive — the right posture for cloud-stored backups. Encryption can be
+turned off (no password) and the compression level is configurable.
 
-Uses subprocess to call `7z` — pre-installed on the Jenkins build agent.
-Set SEVEN_ZIP_PATH if `7z` is not on PATH (e.g. local Windows testing:
-"C:\\Program Files\\7-Zip\\7z.exe").
+Archiving is pure-Python (py7zr), so no external 7-Zip binary is required — handy
+in bare containers. The produced .7z files are standard and open with any
+7-Zip-compatible tool (or py7zr) at restore time.
 """
 import argparse
 import os
-import subprocess
 import sys
 from pathlib import Path
+
+import py7zr
+from py7zr import FILTER_COPY, FILTER_CRYPTO_AES256_SHA256, FILTER_LZMA2
 
 from . import manifest, naming, ui
 
 
-SEVEN_ZIP = os.environ.get("SEVEN_ZIP_PATH", "7z")
 DEFAULT_COMPRESSION = 5   # 0=store … 9=ultra
 
 
-def _run_7z(archive_path: Path, sources: list[str], password: str, level: int) -> int:
-    """Invoke 7z to add `sources` into archive_path. Returns archive size in bytes."""
-    cmd = [SEVEN_ZIP, "a", "-t7z", f"-mx={level}"]
-    if password:
-        cmd += ["-mhe=on", f"-p{password}"]       # encrypt headers + data
-    cmd += [str(archive_path), *sources]
+def _filters(level: int, encrypt: bool) -> list[dict]:
+    """py7zr filter chain: store (level 0) or LZMA2 (1-9), + AES-256 if encrypting."""
+    chain = [{"id": FILTER_COPY}] if level <= 0 else [{"id": FILTER_LZMA2, "preset": level}]
+    if encrypt:
+        chain.append({"id": FILTER_CRYPTO_AES256_SHA256})
+    return chain
 
-    enc = "AES-256" if password else "no encryption"
-    # Don't print the command — password is in argv
-    ui.info(f"Creating {archive_path.name} (7z, mx={level}, {enc})")
-    if not password:
+
+def _pack(archive_path: Path, files: list[Path], password: str, level: int) -> int:
+    """Create archive_path containing `files` (each stored at its basename).
+
+    AES-256 with encrypted headers when `password` is set (hides the filenames —
+    the right posture for cloud-stored backups). Returns the archive size in bytes.
+    """
+    encrypt = bool(password)
+    enc = "AES-256" if encrypt else "no encryption"
+    ui.info(f"Creating {archive_path.name} (py7zr, level={level}, {enc})")
+    if not encrypt:
         ui.warn("Archive is NOT encrypted — avoid for cloud storage of sensitive data")
 
-    try:
-        result = subprocess.run(cmd, capture_output=True, text=True)
-    except FileNotFoundError:
-        raise RuntimeError(
-            f"7-Zip not found ('{SEVEN_ZIP}'). Install p7zip-full, or set "
-            f"SEVEN_ZIP_PATH to the 7z executable."
-        )
-    if result.returncode != 0:
-        raise RuntimeError(f"7z failed (exit {result.returncode}): {result.stderr.strip()}")
-
+    kwargs: dict = {"filters": _filters(level, encrypt)}
+    if encrypt:
+        kwargs["password"] = password
+        kwargs["header_encryption"] = True
+    with py7zr.SevenZipFile(archive_path, "w", **kwargs) as z:
+        for f in files:
+            z.write(f, arcname=Path(f).name)
     return archive_path.stat().st_size
 
 
 def archive_directory(src_dir: Path, archive_path: Path, password: str = "",
                       level: int = DEFAULT_COMPRESSION) -> int:
-    """Archive everything in src_dir into archive_path (combined mode)."""
-    if not src_dir.exists() or not any(src_dir.iterdir()):
+    """Archive every file in src_dir into archive_path (combined mode)."""
+    files = [f for f in sorted(src_dir.glob("*")) if f.is_file()]
+    if not files:
         raise RuntimeError(f"Source directory {src_dir} is empty — nothing to archive")
-    return _run_7z(archive_path, [str(src_dir) + "/*"], password, level)
+    return _pack(archive_path, files, password, level)
 
 
 def archive_file(src_file: Path, archive_path: Path, password: str = "",
                  level: int = DEFAULT_COMPRESSION) -> int:
     """Archive a single file into archive_path (per-product mode)."""
-    return _run_7z(archive_path, [str(src_file)], password, level)
+    return _pack(archive_path, [src_file], password, level)
 
 
 def run_archive(in_dir: Path, out_dir: Path, password: str = "",
@@ -126,7 +132,7 @@ def main():
                         metavar="0-9",
                         default=int(os.environ.get("ARCHIVE_COMPRESSION",
                                                    DEFAULT_COMPRESSION)),
-                        help="7z compression level: 0=store … 9=ultra (default 5)")
+                        help="Compression level: 0=store … 9=ultra (default 5)")
     parser.add_argument("--no-encrypt", action="store_true",
                         help="Create an unencrypted archive (ignore ARCHIVE_PASSWORD)")
     parser.add_argument("--mode", choices=["per-product", "combined"],
