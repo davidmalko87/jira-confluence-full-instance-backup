@@ -19,14 +19,12 @@ The agent that runs the job needs:
 
 | Tool | Why | Linux | Windows |
 |---|---|---|---|
-| Python 3.10+ | runs the backup modules | `apt install python3 python3-venv python3-pip` | `winget install -e --id Python.Python.3.11` |
-| 7-Zip | AES-256 archive | `apt install p7zip-full` | `winget install -e --id 7zip.7zip` |
+| Python 3.10+ | runs the backup modules + pure-Python py7zr archiving (no 7-Zip binary) | `apt install python3 python3-venv python3-pip` | `winget install -e --id Python.Python.3.11` |
 | Git | checkout the repo | `apt install git` | `winget install -e --id Git.Git` |
 
 On **Windows**, after installing, restart the Jenkins service so it picks up the
 new PATH (`Restart-Service Jenkins`), and allow script execution once:
-`Set-ExecutionPolicy RemoteSigned -Scope LocalMachine` (as admin). The pipeline
-sets `SEVEN_ZIP_PATH` to `C:\Program Files\7-Zip\7z.exe` automatically.
+`Set-ExecutionPolicy RemoteSigned -Scope LocalMachine` (as admin).
 
 > **`python` not recognized?** The Jenkins **service account** often has a
 > different PATH than your user (a per-user Python install isn't visible to it).
@@ -219,7 +217,7 @@ plugin (Manage Jenkins → Plugins). Click a build → **Console Output** for de
 | ❌ Confluence `401/403` | wrong email or API token |
 | ❌ Upload `403` | storage credential lacks write permission (GCS: `objectCreator`) |
 | ❌ Setup fails on `python`/`venv` | Python not on the Jenkins agent PATH (Windows: restart the service) |
-| ❌ Archive fails on `7z` | 7-Zip not installed / `SEVEN_ZIP_PATH` wrong |
+| ❌ Archive fails on `py7zr` | Core deps not installed — `pip install -r requirements.txt` |
 
 > **First run often hits the 48-hour cooldown** if a manual backup was taken
 > recently. A `412` cooldown is a *success signal* that auth works — the build

@@ -6,6 +6,16 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.3.1] - 2026-06-06
+
+### Added
+- **Docs: "Running in CI / containers."** The README now documents running in a bare `python:3.x` container (just `pip install -r requirements.txt` + the cloud SDK; **no system packages / no 7-Zip binary** since archiving is pure-Python), the harmless non-root pip-cache warning, peak-disk sizing (≈ raw exports + their archives, ~2× the export size), and the CPU/archive-cost tradeoff (TLS + py7zr packing are CPU-bound; a hard cap slows the Archive step and can trigger the mid-stream download drops that the resumable downloader now survives).
+
+### Changed
+- **Reconciled all "needs 7-Zip" references after the py7zr port.** Updated the README install/agent requirements, `docs/TROUBLESHOOTING.md`, `docs/JENKINS_SETUP.md` (prerequisites + troubleshooting), and `.env.example`, and removed the now-dead `SEVEN_ZIP_PATH` line from the `Jenkinsfile`. Backups need **no 7-Zip binary**; a 7-Zip-compatible tool (or py7zr) is still only needed for manual `.7z` extraction at restore time (`docs/RESTORE.md`).
+
+---
+
 ## [1.3.0] - 2026-06-06
 
 ### Changed
