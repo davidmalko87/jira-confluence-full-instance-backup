@@ -72,7 +72,7 @@ the build — the pipeline only logs it.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `7-Zip not found` | `7z` not on PATH | `apt install p7zip-full` (Linux) / install 7-Zip and set `SEVEN_ZIP_PATH` (Windows) |
+| `ModuleNotFoundError: py7zr` | Core deps not installed (archiving is pure-Python — no 7-Zip binary needed) | `pip install -r requirements.txt` |
 | `ModuleNotFoundError: requests` | Dependencies not installed | `pip install -r requirements.txt` |
 | Garbled symbols / no colors in the menu | `rich` not installed (plain ASCII fallback) | Optional: `pip install -r requirements-ui.txt` |
 
