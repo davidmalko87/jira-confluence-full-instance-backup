@@ -30,7 +30,7 @@ from pathlib import Path
 
 import requests
 
-from . import diskspace, manifest, naming, ui
+from . import manifest, naming, transfer, ui
 
 
 # A browser-like UA + explicit JSON Accept: some Atlassian Cloud endpoints return
@@ -181,29 +181,11 @@ def download_backup(site: str, auth_header: str, file_name: str,
         "User-Agent": USER_AGENT,
     }
 
-    bytes_written = 0
-    with requests.get(url, headers=headers, stream=True, timeout=600) as resp:
-        resp.raise_for_status()
-        total = int(resp.headers.get("Content-Length") or 0) or None
-        diskspace.precheck(out_path.parent, total or 0)
-
-        def _stream(update=None):
-            nonlocal bytes_written
-            with open(out_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        bytes_written += len(chunk)
-                        if update:
-                            update(len(chunk))
-
-        if show_progress:
-            with ui.progress_bar(total, f"Downloading {out_path.name}") as update:
-                _stream(update)
-        else:
-            _stream()
-
-    return bytes_written
+    # Resilient streaming with resume + retry on mid-stream drops; the disk
+    # pre-check runs inside, once the response size is known.
+    return transfer.resilient_download(
+        url, out_path, headers=headers, show_progress=show_progress,
+    )
 
 
 def test_connection(site: str, email: str, token: str) -> tuple[bool, str]:

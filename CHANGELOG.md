@@ -6,6 +6,20 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.2.0] - 2026-06-06
+
+### Added
+- **`upload`: optional base key prefix (`--prefix` / `STORAGE_PREFIX`).** Running `python -m backup.upload` directly placed objects only at `<dest>/<date>/<file>` — there was no way to nest them under a base folder when invoking the module directly (as an orchestrator / cron does; the base-prefix concept previously lived only in `cli.py`). `upload.main()` now takes `--prefix` (default from the `STORAGE_PREFIX` env var) and builds the key as `<base prefix>/<date layout>/<file>`, with either part optional (empty prefix → date-only, unchanged — fully back-compatible). Unit tests cover the key shape with and without the base prefix.
+
+---
+
+## [1.1.0] - 2026-06-06
+
+### Added
+- **Resumable, retrying downloads (`backup/transfer.py`).** Large Atlassian exports stream over a single HTTPS GET that can be cut mid-transfer — most often when CPU is throttled (e.g. a CPU-capped container), which stretches the transfer long enough that an intermediary closes the connection before the body is complete. A single-shot download had no recovery, so the whole file was lost and the run failed partway. `transfer.resilient_download()` now **resumes with an HTTP `Range` request** from the bytes already on disk and **retries with linear backoff**: it handles `206` (append), a `200` to a Range request (origin ignored Range → clean restart), `416` (already complete), and retryable statuses (`408/425/429`, `5xx`, and `401/403` **only on a resume** = likely stale presigned URL; a clean-start `401/403` still fails fast). The Jira and Confluence `download_backup()` callers are now thin wrappers over it (unchanged public signatures). Tunable via `BACKUP_DOWNLOAD_MAX_ATTEMPTS` (8), `BACKUP_DOWNLOAD_READ_TIMEOUT` (120 s), `BACKUP_DOWNLOAD_BACKOFF` (10 s). New `tests/test_transfer.py` proves resume + byte-identical output against a localhost server that drops mid-stream (stdlib only).
+
+---
+
 ## [1.0.0] - 2026-06-03
 
 First stable release. The full **backup → restore round-trip is now verified end-to-end on a live Atlassian Cloud site**, and the codebase ships an offline test suite running in CI. The auth model (Jira cookie-UI + Confluence OBM) was re-confirmed working post the March-2026 Backup-Manager deprecation.

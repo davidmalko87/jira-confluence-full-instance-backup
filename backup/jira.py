@@ -23,7 +23,7 @@ from pathlib import Path
 
 import requests
 
-from . import diskspace, manifest, naming, ui
+from . import manifest, naming, transfer, ui
 
 
 # Cookies the backup endpoint actually needs. Only the auth + XSRF cookies are
@@ -248,38 +248,13 @@ def download_backup(site: str, cookies: dict, file_id: str, out_path: Path,
         "Referer": f"{site}/secure/admin/CloudExport.jspa",
     }
 
-    bytes_written = 0
-    with requests.get(url, params={"fileId": file_id}, headers=headers,
-                      cookies=cookies, stream=True, timeout=600) as resp:
-        if resp.status_code >= 400:
-            snippet = ""
-            try:
-                snippet = " ".join((resp.text or "").split())[:300]
-            except Exception:  # noqa: BLE001
-                pass
-            raise RuntimeError(
-                f"Download failed: HTTP {resp.status_code} from {resp.url}\n"
-                f"  fileId={file_id}\n  body: {snippet}")
-        total = int(resp.headers.get("Content-Length") or 0) or None
-        diskspace.precheck(out_path.parent, total or 0)
-
-        def _stream(update=None):
-            nonlocal bytes_written
-            with open(out_path, "wb") as f:
-                for chunk in resp.iter_content(chunk_size=8 * 1024 * 1024):
-                    if chunk:
-                        f.write(chunk)
-                        bytes_written += len(chunk)
-                        if update:
-                            update(len(chunk))
-
-        if show_progress:
-            with ui.progress_bar(total, f"Downloading {out_path.name}") as update:
-                _stream(update)
-        else:
-            _stream()
-
-    return bytes_written
+    # Resilient streaming with resume + retry — the servlet re-issues a fresh
+    # presigned media URL on every hit, so a Range resume is never tied to a
+    # stale signed link. Disk pre-check happens inside, once the size is known.
+    return transfer.resilient_download(
+        url, out_path, headers=headers, params={"fileId": file_id},
+        cookies=cookies, show_progress=show_progress,
+    )
 
 
 def test_connection(site: str, cookie_blob: str) -> tuple[bool, str]:
