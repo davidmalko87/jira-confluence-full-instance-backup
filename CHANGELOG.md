@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.3.2] - 2026-06-06
+
+### Fixed
+- **README accuracy pass.** The **Project Structure** tree was missing two real modules — added `transfer.py` (resumable downloads) and `diskspace.py` (disk pre-flight). Added **Resilient downloads** and **Pure-Python archiving** rows to the **Features** table, and brought the **Configuration Reference** table up to date (`STORAGE_LAYOUT` / `STORAGE_PREFIX`, `ARCHIVE_MODE`, `POLL_TIMEOUT`, `FAILURE_POLICY` / `JIRA_COOLDOWN_ACTION` / `ON_*`, `BACKUP_DOWNLOAD_*`, `NOTIFY_*_TEMPLATE`; corrected the `ARCHIVE_PASSWORD` description to `.7z` AES-256). Docs only.
+
+---
+
 ## [1.3.1] - 2026-06-06
 
 ### Added
