@@ -6,6 +6,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.2.0] - 2026-06-06
+
+### Added
+- **`upload`: optional base key prefix (`--prefix` / `STORAGE_PREFIX`).** Running `python -m backup.upload` directly placed objects only at `<dest>/<date>/<file>` — there was no way to nest them under a base folder when invoking the module directly (as an orchestrator / cron does; the base-prefix concept previously lived only in `cli.py`). `upload.main()` now takes `--prefix` (default from the `STORAGE_PREFIX` env var) and builds the key as `<base prefix>/<date layout>/<file>`, with either part optional (empty prefix → date-only, unchanged — fully back-compatible). Unit tests cover the key shape with and without the base prefix.
+
+---
+
 ## [1.1.0] - 2026-06-06
 
 ### Added

@@ -171,6 +171,12 @@ def _layout_prefix(layout: str) -> str:
     return datetime.now(timezone.utc).strftime(fmt) if fmt else ""
 
 
+def _combine_prefix(base: str, date_prefix: str) -> str:
+    """Join an optional base key prefix with the date-layout prefix; either part
+    may be empty. e.g. ('my-org-backups', '2026/06') -> 'my-org-backups/2026/06'."""
+    return "/".join(p for p in ((base or "").strip("/"), date_prefix) if p)
+
+
 def run_upload(provider: str, dest: str, in_dir: Path, *, prefix: str = "",
                endpoint_url: str | None = None, region: str | None = None) -> list[str]:
     """Upload every *.7z (and every manifest *.json) in in_dir to <provider>:<dest>/<prefix>/."""
@@ -265,14 +271,19 @@ def main():
                         choices=list(_LAYOUTS),
                         help="Date-folder depth for object keys (default year-month). "
                              "Env: STORAGE_LAYOUT")
+    parser.add_argument("--prefix", default=os.environ.get("STORAGE_PREFIX", ""),
+                        help="Base key prefix placed before the date layout "
+                             "(<prefix>/<date>/<file>); blank = date only. Env: STORAGE_PREFIX")
     args = parser.parse_args()
 
     if not args.in_dir.exists():
         sys.exit(f"Input directory does not exist: {args.in_dir}")
 
+    # Object key = <base prefix>/<date layout>/<file>; either part may be empty.
+    full_prefix = _combine_prefix(args.prefix, _layout_prefix(args.layout))
     try:
         run_upload_multi(args.provider, args.dest, args.in_dir,
-                         prefix=_layout_prefix(args.layout),
+                         prefix=full_prefix,
                          endpoint_url=args.endpoint_url, region=args.region)
     except RuntimeError as exc:
         sys.exit(str(exc))
