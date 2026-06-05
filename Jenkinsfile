@@ -46,7 +46,6 @@ def setupVenv() {
             mkdir -p "$OUT_DIR" "$ARCHIVE_DIR"
         '''
     } else {
-        env.SEVEN_ZIP_PATH = 'C:\\Program Files\\7-Zip\\7z.exe'
         powershell '''
             $ErrorActionPreference = "Stop"
             $py = $env:PYTHON_BIN

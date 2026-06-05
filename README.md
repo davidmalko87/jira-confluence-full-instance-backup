@@ -75,7 +75,16 @@ cd jira-confluence-full-instance-backup
 pip install -r requirements.txt          # + requirements-<provider>.txt as needed
 ```
 
-Requirements: Python 3.10+, and `7z` on PATH (`apt install p7zip-full`, or set `SEVEN_ZIP_PATH`).
+Requirements: **Python 3.10+ only** — archiving is pure-Python (py7zr), so no 7-Zip binary is needed.
+
+### Running in CI / containers
+
+Backups run in a **bare `python:3.x` container** — no system packages:
+
+- Install just `pip install -r requirements.txt` (plus `requirements-<provider>.txt` for your cloud SDK, e.g. `requirements-gcs.txt`). **Archiving is pure-Python** (py7zr) — **no 7-Zip binary** required.
+- A `'…/.cache/pip' is not writable` warning under a non-root container uid is harmless — pip disables its cache and installs anyway.
+- **Disk:** peak workspace ≈ the raw exports **+** their archives — roughly **2× the export size**; size the volume accordingly.
+- **CPU:** downloads are network-bound, but TLS and py7zr packing are **CPU-bound**. A hard CPU cap noticeably slows the **Archive** step, and can stretch downloads long enough to trigger mid-stream drops — which the resumable downloader now survives (`BACKUP_DOWNLOAD_*`). If archive time matters, give that stage more CPU or lower `ARCHIVE_COMPRESSION`.
 
 ---
 
@@ -209,7 +218,7 @@ Each successful run writes a `manifest.json` (timestamp, products, per-file + ar
 
 ## Jenkins
 
-The `Jenkinsfile` is **cross-platform** — it runs on both Linux (`sh`) and Windows (`powershell`) agents. The agent needs **Python 3.10+** and **7-Zip** (`apt install p7zip-full`, or install 7-Zip on Windows). It runs weekly (`cron('H 2 * * 4')`) and installs only the selected provider's SDK.
+The `Jenkinsfile` is **cross-platform** — it runs on both Linux (`sh`) and Windows (`powershell`) agents. The agent needs **Python 3.10+** only — archiving is pure-Python (py7zr), so no 7-Zip binary is required. It runs weekly (`cron('H 2 * * 4')`) and installs only the selected provider's SDK.
 
 > 📖 **Full step-by-step guide (prerequisites, plugins, every credential, troubleshooting): [docs/JENKINS_SETUP.md](docs/JENKINS_SETUP.md).** The summary below is the quick version.
 
@@ -332,7 +341,7 @@ jira-confluence-full-instance-backup/
     ├── cli.py                # Dual-mode entrypoint (menu + CLI)
     ├── jira.py               # Cookie-authenticated Jira backup
     ├── confluence.py         # OBM Basic-auth Confluence backup
-    ├── archive.py            # 7-Zip (optional AES-256, configurable level)
+    ├── archive.py            # py7zr .7z (optional AES-256, configurable level)
     ├── upload.py             # Multi-provider upload (gcs/s3/azure/local)
     ├── notify.py             # Multi-channel notifier
     ├── manifest.py           # manifest.json: completeness + sha256 integrity
