@@ -42,11 +42,13 @@ For per-project Jira backup/restore, see the sibling project [`jira-project-back
 | Feature | Description |
 |---|---|
 | **Full-instance backup** | Jira (all projects, attachments, avatars, logos) + Confluence (all spaces, attachments) in one run |
+| **Resilient downloads** | Large exports **resume** (HTTP `Range`) and retry on mid-stream connection drops — a dropped connection no longer loses the whole file |
 | **Run anywhere** | Interactive **menu** for VMs/manual use **and** **CLI flags** for Jenkins/cron — same codebase; the `Jenkinsfile` runs on **Linux and Windows** agents |
 | **One-paste Jenkins setup** | Export a Script Console script from your config that creates all credentials + the pipeline job — no manual credential forms |
 | **Pluggable storage** | **GCS · AWS S3 / S3-compatible (R2, B2, MinIO, Spaces) · Azure Blob · local** — pick one flag; only that SDK is needed |
 | **Pluggable notifications** | **Slack · Teams · Discord · Google Chat · email (SMTP) · generic webhook** — any combination, no extra deps |
-| **Optional encryption** | 7-Zip AES-256 with encrypted headers — on by default, switch off with `--no-encrypt` |
+| **Optional encryption** | `.7z` **AES-256** with encrypted headers (filenames hidden) — on by default, switch off with `--no-encrypt` |
+| **Pure-Python archiving** | `.7z` via **py7zr** — no 7-Zip binary, so it runs in a bare `python:3.x` container |
 | **Configurable compression** | `0` (store) … `9` (ultra) |
 | **Custom filenames** | Name templates: `{product} {site} {date} {time} {datetime} {timestamp}` |
 | **Integrity & housekeeping** | `manifest.json` with sha256 + `--validate`, `--cleanup`, `--skip-existing`, `--dry-run` |
@@ -312,16 +314,21 @@ All values come from environment variables, optionally loaded from `.env` (see `
 | `SITE_JIRA` / `SITE_CONFLUENCE` | Atlassian base URLs |
 | `JIRA_COOKIES` | Browser session cookie blob for Jira |
 | `ATL_EMAIL` / `ATL_TOKEN` | Confluence Basic auth |
-| `ARCHIVE_PASSWORD` | 7-Zip AES-256 passphrase (blank = unencrypted) |
-| `ARCHIVE_COMPRESSION` | 0–9 |
+| `ARCHIVE_PASSWORD` | `.7z` AES-256 passphrase (blank = unencrypted) |
+| `ARCHIVE_COMPRESSION` / `ARCHIVE_MODE` | compression `0`–`9`; per-product vs combined `.7z` |
 | `PRODUCT_NAME_TEMPLATE` / `ARCHIVE_NAME_TEMPLATE` | Filename templates |
 | `STORAGE_PROVIDER` / `STORAGE_DEST` | Backend + bucket/container/dir (aligned **comma lists** for multiple targets, e.g. `gcs,s3` + `bucketA,bucketB`) |
+| `STORAGE_LAYOUT` / `STORAGE_PREFIX` | date-folder depth for object keys; optional base prefix before it |
 | `BACKUP_CRON` | Jenkins schedule (default `H 2 * * 4`) |
+| `POLL_TIMEOUT` | max seconds to wait per backup (default `21600` = 6h) |
+| `FAILURE_POLICY` / `JIRA_COOLDOWN_ACTION` / `ON_*` | pipeline behaviour per outcome (balanced / resilient / strict + per-outcome overrides) |
+| `BACKUP_DOWNLOAD_*` | resumable-download tunables (max attempts / read timeout / backoff) |
 | `PYTHON_BIN` | Jenkins agent Python path (blank = auto-detect; set if `python` isn't on the service PATH) |
 | `S3_ENDPOINT_URL` | S3-compatible endpoint (s3 only) |
 | `GOOGLE_APPLICATION_CREDENTIALS` / `AWS_*` / `AZURE_STORAGE_CONNECTION_STRING` | Provider credentials |
 | `NOTIFY_CHANNELS` | Comma list of channels |
 | `NOTIFY_WEBHOOK_URL` / `SMTP_*` | Notification delivery |
+| `NOTIFY_SUBJECT_TEMPLATE` / `NOTIFY_BODY_TEMPLATE` | custom notification text (placeholders) |
 
 ---
 
@@ -341,6 +348,8 @@ jira-confluence-full-instance-backup/
     ├── cli.py                # Dual-mode entrypoint (menu + CLI)
     ├── jira.py               # Cookie-authenticated Jira backup
     ├── confluence.py         # OBM Basic-auth Confluence backup
+    ├── transfer.py           # Resumable, retrying downloads (HTTP Range + resume)
+    ├── diskspace.py          # Pre-flight free-disk check before downloads
     ├── archive.py            # py7zr .7z (optional AES-256, configurable level)
     ├── upload.py             # Multi-provider upload (gcs/s3/azure/local)
     ├── notify.py             # Multi-channel notifier
