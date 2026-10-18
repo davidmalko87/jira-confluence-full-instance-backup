@@ -1,7 +1,8 @@
 # Troubleshooting & FAQ
 
-Run `python main.py` → **9) Test connections** first — it checks Jira, Confluence,
-and storage and tells you exactly which one is wrong.
+Run `jira-confluence-backup --test-connection` (or menu → **8) Test connections**;
+from a clone, `python main.py` takes the same flags) first — it checks Jira,
+Confluence, and storage and tells you exactly which one is wrong.
 
 ## Jira
 
@@ -9,10 +10,10 @@ and storage and tells you exactly which one is wrong.
 |---|---|---|
 | `Test connections` → **HTTP 204** | **This is success** — authenticated, just no previous backup task yet | Nothing to do |
 | `MISSING required cookie(s)` | The pasted blob lacks `tenant.session.token` / `atlassian.xsrf.token` | Re-grab via **Copy as cURL** (see below) |
-| `HTTP 403: ... only accessible from the UI` | Atlassian's UI-only gate didn't recognise the request as browser-originated | Make sure you pasted a real logged-in request's **Copy as cURL** (Network tab), not a hand-built blob |
-| `HTTP 403 — likely expired/invalid cookies` | The `tenant.session.token` JWT expired (~30 days) | Refresh the cookie blob (re-do Copy as cURL) |
-| Backup stage exits **code 2** | Cookies expired/invalid | Refresh cookies and re-run |
-| `412` / `[COOLDOWN]` | Atlassian's 48-hour throttle between full-instance backups | Wait 48h; the build stays green — this is not a failure |
+| `HTTP 403: ... only accessible from the UI` (Test connections) or `Cookie auth rejected — cookies likely expired` (backup stage) | The same 403 body from Atlassian's UI-only gate: most often the session cookies have expired; otherwise the blob didn't come from a real browser request. Test connections labels it "not a cookie problem", the backup stage "cookies likely expired" | Re-grab a fresh **Copy as cURL** from a logged-in request (Network tab), not a hand-built blob, and refresh the cookies |
+| `HTTP 403 — likely expired/invalid cookies` (Test connections) or `403 from runbackup: ...` (backup stage, exit 1) | The `tenant.session.token` JWT expired (~30 days) or is invalid | Refresh the cookie blob (re-do Copy as cURL) |
+| Jenkins Jira stage exits **code 2** (`jira-confluence-backup`: exit 1) | The UI-only gate rejected the cookies (usually expired) | Refresh cookies and re-run |
+| `412` / `[COOLDOWN]` | Atlassian's 48-hour throttle between full-instance backups | By default (`JIRA_COOLDOWN_ACTION=download-existing`) the most recent existing backup is downloaded instead. With none to download (or `skip`), the Jenkins Jira stage exits 3 and the default `balanced` policy marks the build UNSTABLE (yellow) — not a failure; `jira-confluence-backup` exits 0. Wait 48h for a fresh backup |
 
 **Getting the cookie blob (the reliable way):** log in, open
 `https://<your-site>.atlassian.net/secure/admin/CloudExport.jspa`, press F12 →
@@ -37,7 +38,7 @@ different service.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `the gcs/s3/azure SDK isn't installed` | Provider SDK missing | `pip install -r requirements-<provider>.txt` |
+| `the gcs/s3/azure SDK isn't installed` | Provider SDK missing | `pip install "jira-confluence-full-instance-backup[<provider>]"` (e.g. `[s3]`); from a clone, the `pip install -r requirements-<provider>.txt` the hint names |
 | `write failed: 403` | The credential lacks write permission | GCS: grant the SA `roles/storage.objectCreator` on the bucket |
 | `write failed: 404` | Bucket/container doesn't exist or wrong name | Create it first; enter just the **name** (no `gs://`, no URL) |
 | `Your default credentials were not found` (gcs) | `GOOGLE_APPLICATION_CREDENTIALS` unset or wrong path | Point it at a valid service-account JSON key |
@@ -72,9 +73,9 @@ the build — the pipeline only logs it.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: py7zr` | Core deps not installed (archiving is pure-Python — no 7-Zip binary needed) | `pip install -r requirements.txt` |
-| `ModuleNotFoundError: requests` | Dependencies not installed | `pip install -r requirements.txt` |
-| Garbled symbols / no colors in the menu | `rich` not installed (plain ASCII fallback) | Optional: `pip install -r requirements-ui.txt` |
+| `ModuleNotFoundError: py7zr` | Core deps not installed (archiving is pure-Python — no 7-Zip binary needed) | `pip install jira-confluence-full-instance-backup` (clone: `pip install -r requirements.txt`) |
+| `ModuleNotFoundError: requests` | Dependencies not installed | `pip install jira-confluence-full-instance-backup` (clone: `pip install -r requirements.txt`) |
+| Garbled symbols / no colors in the menu | `rich` not installed (plain ASCII fallback) | Optional: `pip install "jira-confluence-full-instance-backup[ui]"` (clone: `pip install -r requirements-ui.txt`) |
 
 ## Jenkins
 
@@ -89,8 +90,8 @@ Full setup: [JENKINS_SETUP.md](JENKINS_SETUP.md).
 ## FAQ
 
 - **Where do backups land?** `<provider>:<dest>/YYYY/MM/` (configurable via `STORAGE_LAYOUT`) — per-product `.7z` files (`jira-<date>.7z`, `confluence-<date>.7z`) each with a `<stem>.manifest.json`.
-- **How do I verify a backup?** `python main.py --validate` re-checksums the archive against its manifest.
-- **How do I preview without running a real backup?** `python main.py --all --dry-run` (no API calls, no cooldown used).
+- **How do I verify a backup?** `jira-confluence-backup --validate` re-checksums the archive against its manifest.
+- **How do I preview without running a real backup?** `jira-confluence-backup --all --dry-run` (no API calls, no cooldown used).
 - **Can I back up to more than one cloud?** Yes — set comma lists, e.g. `STORAGE_PROVIDER=gcs,s3` + `STORAGE_DEST=bucketA,bucketB`.
 - **How often can Jira be backed up?** Atlassian enforces a 48-hour cooldown per instance.
-- **Exit codes:** `0` success (or graceful skip like cooldown), `1` generic failure, `2` human action needed (refresh cookies / fix credentials).
+- **Exit codes:** the backup modules the Jenkinsfile runs return `0` success, `1` generic failure, `2` human action needed (refresh cookies / fix credentials), and (Jira only) `3` cooldown / nothing downloaded. The `jira-confluence-backup` console script returns `0` success (a cooldown skip included) or `1` failure — expired cookies included.

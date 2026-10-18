@@ -15,8 +15,9 @@ itself is **manual**, through Atlassian's import UI — this tool does not resto
 ## 1. Get the raw Atlassian file out of the archive
 
 Each product is stored as `<product>-<date>.7z`, which simply *wraps* the
-original Atlassian `.zip` (byte-for-byte; the `manifest.json` records its
-sha256). Download the `.7z` from your storage and extract it:
+original Atlassian `.zip` (byte-for-byte; its `<product>-<date>.manifest.json` —
+`manifest.json` in combined mode — records its sha256). Download the `.7z` from
+your storage and extract it:
 
 ```bash
 7z x jira-2026-05-27.7z          # -> jira-2026-05-27.zip   (Jira export)
