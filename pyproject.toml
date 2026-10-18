@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jira-confluence-full-instance-backup"
 dynamic = ["version"]
-description = "Full-instance backup of Jira & Confluence Cloud (Standard plan) to pluggable cloud storage, with Slack/Teams/email/webhook notifications"
+description = "Full-instance backup of Jira & Confluence Cloud (Standard plan) to pluggable cloud storage, with Slack/Teams/Discord/Google Chat/email/webhook notifications"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "David Malko", email = "davidmalko87@gmail.com" }]

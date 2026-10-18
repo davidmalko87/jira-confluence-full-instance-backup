@@ -14,8 +14,8 @@
 
 Automated **full-instance backup** of **Jira Cloud** and **Confluence Cloud** for
 the Atlassian **Standard plan**. Run it by hand from an interactive menu, or
-unattended from Jenkins/cron. Backups are encrypted and shipped to **the cloud
-of your choice** — Google Cloud Storage, AWS S3 (and S3-compatible stores),
+unattended from Jenkins/cron. Backups are packed as .7z (AES-256 encrypted when
+you set `ARCHIVE_PASSWORD`) and shipped to **the cloud of your choice** — Google Cloud Storage, AWS S3 (and S3-compatible stores),
 Azure Blob, or a local/mounted directory — with notifications to **any channel**
 you use: Slack, Microsoft Teams, Discord, Google Chat, email, or a generic
 webhook.
