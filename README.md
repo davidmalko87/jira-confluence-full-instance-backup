@@ -220,7 +220,7 @@ Setup  ->  Jira  ->  Confluence  ->  Archive  ->  Upload          ->  Notify
                                      AES-256)     <dest>/YYYY/MM/)    channels)
 ```
 
-Stages are independent: a Jira cookie expiry does not stop the Confluence stage. In Jenkins the Confluence backup is then still archived and uploaded; with `jira-confluence-backup --all` (or `--backup … --archive --upload`) the Confluence backup still runs, but a failed Jira backup currently stops the run before Archive / Upload — run `jira-confluence-backup --archive --upload` afterwards to ship it.
+Stages are independent, but in Jenkins `FAILURE_POLICY` decides what a Jira failure does: the default `balanced` stops the build on expired cookies (exit 2) before the Confluence stage runs, while `resilient` (or `ON_CREDENTIALS=unstable`) marks the build UNSTABLE and still backs up, archives and uploads Confluence. With `jira-confluence-backup --all` (or `--backup … --archive --upload`) the Confluence backup still runs, but a failed Jira backup currently stops the run before Archive / Upload — run `jira-confluence-backup --archive --upload` afterwards to ship it.
 
 ### Auth model
 
@@ -273,7 +273,7 @@ Set `STORAGE_PROVIDER` + `STORAGE_DEST` (environment or `.env`; the low-level `p
 
 ## Integrity & housekeeping
 
-Each archive gets a manifest next to it — `<product>-<date>.manifest.json` in the default per-product mode, `manifest.json` in combined mode — with the timestamp, products, per-file + archive **sha256**, `complete: true` and `encrypted`; it is uploaded too.
+Each archive gets a manifest next to it — `<archive-stem>.manifest.json` (e.g. `jira-<date>.manifest.json`) in the default per-product mode, `manifest.json` in combined mode — with the timestamp, products, per-file + archive **sha256**, `complete: true` and `encrypted`; it is uploaded too.
 
 - `--validate` — re-checksum the local archive(s) against their manifest(s).
 - `--cleanup [--keep-days N]` — remove `.7z` files in `./archive` that no complete manifest references (failed runs) and, once any complete manifest exists, **every file in `./out`** (including raw exports that were not archived yet); with `--keep-days N`, also files in `./archive` older than N days.
@@ -299,7 +299,7 @@ The `Jenkinsfile` is **cross-platform** — it runs on both Linux (`sh`) and Win
 
 ### Manual setup
 
-The `Jenkinsfile` has nothing to edit — it reads the non-secret settings from Jenkins **global environment variables** at build time (the fast setup creates them). Set them under **Manage Jenkins → System → Global properties → Environment variables**, or tick/fill them per run in **Build with Parameters**:
+The `Jenkinsfile` has nothing to edit — it reads the non-secret settings from Jenkins **global environment variables** at build time (the fast setup creates them). Set them under **Manage Jenkins → System → Global properties → Environment variables** (storage targets and notification channels can also be overridden per run in **Build with Parameters**):
 
 | Global env var | Example |
 |---|---|

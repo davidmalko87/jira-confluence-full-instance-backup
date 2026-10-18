@@ -68,7 +68,7 @@ approve the `pypi` environment.
 ```bash
 pip install -r requirements.txt        # core (requests, py7zr)
 pip install -r requirements-ui.txt     # optional: rich (nicer menu output)
-pip install ruff pytest                # same tools as CI (or: pip install -e ".[dev]")
+pip install ruff pytest                # same tools as CI
 ruff check .
 pytest -q
 python -m backup --help

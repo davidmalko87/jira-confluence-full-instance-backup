@@ -397,7 +397,7 @@ source backups ~30 days):
 - **local** provider — lifecycle rules don't apply, and `--cleanup` only prunes
   the local `./out` / `./archive` work folders, never `STORAGE_DEST`. Schedule an
   OS job (cron / Task Scheduler) on the destination instead, e.g.
-  `find /srv/backups -type f \( -name '*.7z' -o -name '*.manifest.json' \) -mtime +30 -delete`.
+  `find /srv/backups -type f \( -name '*.7z' -o -name '*manifest.json' \) -mtime +30 -delete`.
 
 Because each backup object's name carries its date, a lifecycle age rule maps
 directly to "keep the last N days".
