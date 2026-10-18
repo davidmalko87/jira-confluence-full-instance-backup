@@ -6,6 +6,19 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/) and 
 
 ---
 
+## [1.3.3] - 2026-10-18
+
+### Changed
+- **README:** install from PyPI with `pip` or `pipx` (plus how to upgrade), run it with the `jira-confluence-backup` console
+  command, and where `.env`, `out/`, `archive/` and the generated Jenkins scripts live; the docs were re-checked against the CLI and corrected.
+  Also synced docs/JENKINS_SETUP.md, docs/TROUBLESHOOTING.md, docs/RESTORE.md and .env.example.
+- **CI:** pin `ruff<0.16` (0.16 changed its default rules and failed lint on unchanged code), and add a job that
+  builds the sdist and wheel, runs `twine check`, installs the wheel and runs `jira-confluence-backup --help`.
+
+Docs and CI only — no code changes.
+
+---
+
 ## [1.3.2] - 2026-06-06
 
 ### Fixed
