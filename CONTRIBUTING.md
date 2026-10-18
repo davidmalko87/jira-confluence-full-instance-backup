@@ -66,10 +66,11 @@ approve the `pypi` environment.
 ## Development
 
 ```bash
-pip install -r requirements.txt        # core (requests)
+pip install -r requirements.txt        # core (requests, py7zr)
 pip install -r requirements-ui.txt     # optional: rich (nicer menu output)
-pip install ruff
+pip install ruff pytest                # same tools as CI
 ruff check .
+pytest -q
 python -m backup --help
 python main.py --help
 ```
@@ -79,7 +80,7 @@ python main.py --help
 - **No secrets, ever.** Never commit real cookies, API tokens, emails, site
   URLs, or bucket/container names. Use placeholders and `.env.example`; `.env`
   is gitignored.
-- **Keep core dependencies minimal** (stdlib + `requests`). New cloud providers
+- **Keep core dependencies minimal** (stdlib + `requests` + `py7zr`). New cloud providers
   go in their own `requirements-<provider>.txt` and import lazily.
 - **ASCII-only console output.** `rich` is optional and used for color only;
   never emit non-ASCII glyphs (they crash the legacy Windows console).
@@ -92,9 +93,16 @@ python main.py --help
 
 ### Exit-code convention
 
-- `0` — success (or graceful skip like cooldown)
+Backup modules run by the Jenkinsfile (`python -m backup.jira` / `backup.confluence`):
+
+- `0` — success
 - `1` — generic failure
 - `2` — human action needed (refresh cookies, fix credentials)
+- `3` — Jira cooldown / nothing downloaded (the Jenkinsfile's `cooldown` outcome)
+
+The `jira-confluence-backup` console script currently returns only `0` (success,
+including a cooldown skip) or `1` (any failure), plus argparse's `2` for a usage
+error.
 
 ---
 

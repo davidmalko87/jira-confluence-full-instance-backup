@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "jira-confluence-full-instance-backup"
 dynamic = ["version"]
-description = "Full-instance backup of Jira & Confluence Cloud (Standard plan) to pluggable cloud storage"
+description = "Full-instance backup of Jira & Confluence Cloud (Standard plan) to pluggable cloud storage, with Slack/Teams/Discord/Google Chat/email/webhook notifications"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "David Malko", email = "davidmalko87@gmail.com" }]
 requires-python = ">=3.10"
-keywords = ["jira", "confluence", "backup", "atlassian", "atlassian-cloud", "jenkins", "gcs", "s3", "azure"]
+keywords = ["jira", "confluence", "backup", "atlassian", "atlassian-cloud", "jenkins", "gcs", "s3", "azure", "cli", "disaster-recovery", "7zip", "automation", "notifications"]
 dependencies = [
     "requests>=2.31",
     "py7zr>=0.20",
