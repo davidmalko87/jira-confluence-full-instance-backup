@@ -6,10 +6,10 @@ Windows** agents. The `Jenkinsfile` is cross-platform (it uses `sh` on Linux and
 
 There are two paths:
 
-- **[Fast setup](#fast-setup-one-paste)** — generate a script from your local
+- **[Fast setup](#3-fast-setup-one-paste)** — generate a script from your local
   config and paste it once into the Jenkins Script Console. Creates all
   credentials + the job. Recommended.
-- **[Manual setup](#manual-setup)** — create the credentials and job by hand.
+- **[Manual setup](#4-manual-setup)** — create the credentials and job by hand.
 
 ---
 
@@ -31,8 +31,8 @@ new PATH (`Restart-Service Jenkins`), and allow script execution once:
 > The pipeline auto-detects `python`/`py`, but if neither is on the service PATH,
 > set the **`PYTHON_BIN`** env var to the full interpreter path (e.g.
 > `C:\Users\<you>\AppData\Local\Programs\Python\Python311\python.exe`) — in
-> `main.py` Configure (carried by the export) or *Manage Jenkins → System →
-> Global properties → Environment variables*. Alternatively, reinstall Python
+> Configure (`jira-confluence-backup --configure`, carried by the export) or
+> *Manage Jenkins → System → Global properties → Environment variables*. Alternatively, reinstall Python
 > "for all users" + "Add to PATH" and `Restart-Service Jenkins`.
 
 > A cloud provider SDK (`google-cloud-storage`, `boto3`, `azure-storage-blob`)
@@ -84,11 +84,12 @@ cookies, not an API token. The blob must contain at least
 3. **F12 → Network**, reload the page (Ctrl+R).
 4. Click the `CloudExport.jspa` request (or any `/rest/backup/1/export/...` one)
    → right-click → **Copy → Copy as cURL (bash)**.
-5. Run the tool locally: `python main.py` → **Configure credentials** → paste the
+5. Run the tool locally: `jira-confluence-backup --configure` (from a clone:
+   `python main.py --configure`; or menu → **Configure credentials**) → paste the
    whole cURL when prompted (it extracts the cookies and validates them). The
-   value it saves to `.env` is what goes into the `jira-cookies` credential.
+   value it saves to `./.env` is what goes into the `jira-cookies` credential.
 
-The `tenant.session.token` JWT expires ~30 days — see [Cookie refresh](#cookie-refresh).
+The `tenant.session.token` JWT expires ~30 days — see [Cookie refresh](#cookie-refresh-monthly).
 
 ### GCS (Google Cloud Storage)
 
@@ -118,13 +119,14 @@ Upload `sa-key.json` as the `gcp-backup-sa-key` **Secret file** credential.
 
 This turns your already-working local config into Jenkins credentials + the job.
 
-1. **Configure locally** (on any machine with the tool):
-   `python main.py` → **10) Configure credentials** → fill everything in →
-   `python main.py` → **9) Test connections** to confirm Jira / Confluence /
-   storage all pass.
+1. **Configure locally** (on any machine with the tool installed from PyPI, or a
+   clone with `python main.py` in place of `jira-confluence-backup`):
+   `jira-confluence-backup --configure` (menu → **13) Configure credentials**) →
+   fill everything in → `jira-confluence-backup --test-connection` (menu →
+   **8) Test connections**) to confirm Jira / Confluence / storage all pass.
 2. **Generate the setup script**:
-   `python main.py` → **15) Export Jenkins setup** (or `python main.py --export-jenkins`).
-   This writes a **gitignored** `jenkins-setup.groovy`.
+   `jira-confluence-backup --export-jenkins` (menu → **15) Export Jenkins setup**).
+   This writes `jenkins-setup.groovy` to the current folder (**gitignored** in a clone).
 3. **Import into Jenkins**: Manage Jenkins → **Script Console** → paste the file's
    contents → **Run**. It creates every credential (with the exact IDs) **and**
    the `atlassian-full-backup` pipeline job pointing at this repo.
@@ -167,22 +169,22 @@ configuration needs. Scope = Global; Description = same as the ID.
 
 ### 4b. Configure the pipeline environment
 
-The `Jenkinsfile` `environment` block holds the non-secret settings. Edit them
-for your deployment (commit to your own branch/fork, or edit in place):
+The `Jenkinsfile` has nothing to edit: its only `environment` block sets
+`OUT_DIR` / `ARCHIVE_DIR`, and the Setup stage reads the non-secret settings from
+Jenkins **global environment variables** (which the fast setup creates) or from
+the *Build with Parameters* form. Set them under **Manage Jenkins → System →
+Global properties → Environment variables**:
 
-```groovy
-environment {
-    SITE_JIRA        = 'https://<YOUR_SITE>.atlassian.net'
-    SITE_CONFLUENCE  = 'https://<YOUR_SITE>.atlassian.net/wiki'
-    STORAGE_PROVIDER = 'gcs'            // gcs | s3 | azure | local
-    STORAGE_DEST     = '<YOUR_BUCKET>'  // bucket / container / directory
-    S3_ENDPOINT_URL  = ''               // only for R2 / B2 / MinIO / Spaces
-    NOTIFY_CHANNELS  = 'google-chat'    // comma list, or empty
-    PRODUCT_NAME_TEMPLATE = '{product}-{date}'
-    ARCHIVE_NAME_TEMPLATE = 'atlassian-backup-{date}'
-    ARCHIVE_COMPRESSION   = '5'
-}
-```
+| Global env var | Example |
+|---|---|
+| `SITE_JIRA` | `https://<YOUR_SITE>.atlassian.net` |
+| `SITE_CONFLUENCE` | `https://<YOUR_SITE>.atlassian.net/wiki` |
+| `STORAGE_PROVIDER` | `gcs` (`gcs` \| `s3` \| `azure` \| `local`, or a comma list) |
+| `STORAGE_DEST` | `<YOUR_BUCKET>` — bucket / container, or for `local` an absolute directory on the agent outside the job workspace |
+| `S3_ENDPOINT_URL` | only for R2 / B2 / MinIO / Spaces |
+| `NOTIFY_CHANNELS` | `google-chat` (comma list, or empty) |
+| `PRODUCT_NAME_TEMPLATE` / `ARCHIVE_NAME_TEMPLATE` | `{product}-{date}` / `atlassian-backup-{date}` |
+| `ARCHIVE_COMPRESSION` | `5` |
 
 ### 4c. Create the job
 
@@ -212,23 +214,25 @@ plugin (Manage Jenkins → Plugins). Click a build → **Console Output** for de
 | Outcome | Meaning |
 |---|---|
 | ✅ all stages green | backup landed in your store under `YYYY/MM/` (per-product `.7z` + manifest) |
-| ⚠️ Jira logs `[COOLDOWN]` / exits 0 with marker | Atlassian's 48-hour throttle — auth worked; retry after 48h |
-| ❌ Jira exit code 2 | cookies expired/invalid → [refresh](#cookie-refresh) |
+| ✅ / ⚠️ Jira logs `[COOLDOWN]` | Atlassian's 48-hour throttle — auth worked. By default the most recent existing backup is downloaded and the build stays green; with none to download (or `JIRA_COOLDOWN_ACTION=skip`) Jira exits 3 and the default `balanced` policy marks the build UNSTABLE. Retry after 48h for a fresh backup |
+| ❌ Jira exit code 2 | cookies expired/invalid → [refresh](#cookie-refresh-monthly) |
 | ❌ Confluence `401/403` | wrong email or API token |
 | ❌ Upload `403` | storage credential lacks write permission (GCS: `objectCreator`) |
 | ❌ Setup fails on `python`/`venv` | Python not on the Jenkins agent PATH (Windows: restart the service) |
 | ❌ Archive fails on `py7zr` | Core deps not installed — `pip install -r requirements.txt` |
 
 > **First run often hits the 48-hour cooldown** if a manual backup was taken
-> recently. A `412` cooldown is a *success signal* that auth works — the build
-> stays green. Re-run after 48h for a real `.7z`.
+> recently. A `412` cooldown is a *success signal* that auth works — by default
+> the run downloads that recent backup and stays green; if there is nothing to
+> download (or `JIRA_COOLDOWN_ACTION=skip`), the build turns UNSTABLE (yellow)
+> under the default `balanced` policy. Re-run after 48h for a fresh backup.
 
 ---
 
 ## 6. Schedule & per-run options
 
 **Schedule (cron):** driven by the `BACKUP_CRON` global env var (default
-`H 2 * * 4` = Thursday ~02:00). Set it in `python main.py` → Configure (it's
+`H 2 * * 4` = Thursday ~02:00). Set it in `jira-confluence-backup --configure` (it's
 carried to Jenkins by the export), or in *Manage Jenkins → System → Global
 properties → Environment variables*.
 
@@ -242,8 +246,13 @@ changing your saved config:
   rerun or during the 48h cooldown.
 - **Storage** — a checkbox per backend (**GCS / S3 / Azure / Local**) with a
   destination field beneath each (bucket / container / directory). Tick every
-  backend you want; the archive is uploaded to all ticked targets. (If nothing
-  is ticked, the build falls back to a local copy so a backup is never lost.)
+  backend you want; the archive is uploaded to all ticked targets. If nothing
+  is ticked, the storage from the global env vars is used. If none is configured
+  either — or **Local** is ticked with an empty path — the build falls back to
+  `${WORKSPACE}/archive`, which `cleanWs()` deletes after the build, so **no
+  durable copy is kept**. For `local`, always give an absolute directory on the
+  agent outside the workspace (a relative path such as `./backups` from `.env`
+  also resolves inside the workspace and is wiped).
 - **Notifications** — a checkbox per channel (**Google Chat / Slack / Discord /
   Teams / Email / Webhook**). Tick the ones to send a report to.
 - **Compression** — a `0`–`9` dropdown; **name templates** and **poll timeout**
@@ -331,7 +340,7 @@ fails: every notification warns when the cookie is within 7 days of expiry.
 
 Fastest refresh (validated):
 
-1. `python main.py` → **Refresh Jira cookies** (or `python main.py --refresh-cookies`).
+1. `jira-confluence-backup --refresh-cookies` (or menu → **Refresh cookies**; from a clone, `python main.py --refresh-cookies`).
 2. Paste a fresh **Copy as cURL** (see [Getting the Jira cookie blob](#getting-the-jira-cookie-blob)). It's validated (and optionally live-tested) and saved to `.env`.
 3. It writes `update-jira-cookies.groovy` — paste it into **Manage Jenkins → Script Console → Run** to update only the `jira-cookies` credential. Delete the file afterward.
 
@@ -347,12 +356,12 @@ things in place and never deletes:
 - the pipeline job is **updated in place** — its build history is preserved.
 
 So to change anything (rotate a credential, switch notification channels, change
-storage…): `python main.py` → **Configure** (make the change) → **Export Jenkins
-setup** → paste the new `jenkins-setup.groovy` into **Script Console → Run** →
+storage…): `jira-confluence-backup --configure` (make the change) →
+`jira-confluence-backup --export-jenkins` → paste the new `jenkins-setup.groovy` into **Script Console → Run** →
 delete the generated file. You do **not** delete or recreate the job.
 
 Lighter paths when you change only one thing:
-- **Jira cookies only** → `python main.py --refresh-cookies` →
+- **Jira cookies only** → `jira-confluence-backup --refresh-cookies` →
   `update-jira-cookies.groovy` (touches *only* the `jira-cookies` credential).
 - **A single credential** → edit it directly in Manage Jenkins → Credentials.
 - **A one-off run** with different options → Build with Parameters (per-run only;
@@ -385,8 +394,10 @@ source backups ~30 days):
   same lifecycle concept.
 - **Azure Blob** — storage account → *Lifecycle management* → rule: delete blobs
   *N days after last modification*.
-- **local** provider — lifecycle rules don't apply; prune the directory with the
-  CLI (`python main.py --cleanup --keep-days 30`) on a schedule, or an OS cron.
+- **local** provider — lifecycle rules don't apply, and `--cleanup` only prunes
+  the local `./out` / `./archive` work folders, never `STORAGE_DEST`. Schedule an
+  OS job (cron / Task Scheduler) on the destination instead, e.g.
+  `find /srv/backups -type f \( -name '*.7z' -o -name '*.manifest.json' \) -mtime +30 -delete`.
 
 Because each backup object's name carries its date, a lifecycle age rule maps
 directly to "keep the last N days".
@@ -398,7 +409,7 @@ directly to "keep the last N days".
 | Setup | none | Python/venv/network |
 | Jira backup | `jira-cookies` | exit 2 = refresh cookies |
 | Confluence backup | `atlassian-email`, `atlassian-api-token` | 401/403 = wrong token |
-| Archive | `archive-password` | 7z missing on agent |
+| Archive | `archive-password` | `py7zr` not installed in the venv (`pip install -r requirements.txt`) |
 | Upload | storage credential (provider-specific) | 403 = missing write permission |
 | Notify | `notify-webhook-url` and/or `smtp-*` | bad webhook/SMTP (non-fatal) |
 
@@ -430,7 +441,7 @@ and the generated `jenkins-setup.groovy` wires them into the job:
 | Setting | Env var | Example |
 |---|---|---|
 | Repo URL | `JENKINS_REPO_URL` | `https://gitlab.yourco/team/atlassian-backup.git` |
-| Branch / ref | `JENKINS_BRANCH` | `*/master`, `*/main`, or `refs/tags/v0.14.0` |
+| Branch / ref | `JENKINS_BRANCH` | `*/master`, `*/main`, or `refs/tags/v1.3.2` |
 | Credentials ID (private mirror) | `JENKINS_REPO_CREDENTIALS_ID` | `gitlab-deploy-key` |
 
 Three common patterns:
@@ -453,9 +464,9 @@ Three common patterns:
   On Windows use forward slashes, e.g. `file:///C:/jenkins/atlassian-backup`. The
   path must exist on whichever node runs the build (a single-node controller, or
   every agent that may run it). To **update or pin**, check that clone out to the
-  ref you want — `git -C /srv/jenkins/atlassian-backup fetch && git checkout v0.14.0`.
+  ref you want — `git -C /srv/jenkins/atlassian-backup fetch && git -C /srv/jenkins/atlassian-backup checkout v1.3.2`.
 - **Pin a version instead of always-latest `master`.** Set `JENKINS_BRANCH` to a
-  tag (`refs/tags/v0.14.0`) or a commit SHA, so the job builds exactly that
+  tag (`refs/tags/v1.3.2`) or a commit SHA, so the job builds exactly that
   revision and never drifts when new commits land. Upgrade deliberately by bumping
   the tag and re-exporting (or editing the job's ref).
 
@@ -475,10 +486,13 @@ Three common patterns:
 If Jira returns `403`, the tool prints the response body. Two cases:
 
 - **"only accessible from the UI"** → Atlassian's UI-only gate rejected the
-  request as non-browser. The cookies are fine; the request didn't look
-  browser-like enough. Confirm you copied a real logged-in request's cURL.
-- **Other 403 / expired** → the session is no longer valid; refresh the cookie
-  blob.
+  request. The Jira stage reports this as
+  `Cookie auth rejected — cookies likely expired` and exits 2, while Test
+  connections calls the same body "not a cookie problem". Most often the session has expired; otherwise the request didn't
+  look browser-like enough. Either way, re-grab a real logged-in request's
+  **Copy as cURL** and refresh the cookie blob.
+- **Other 403 / expired** → the session is no longer valid (the Jira stage exits
+  1 with `403 from runbackup: ...`); refresh the cookie blob.
 
 Cross-check: run the browser's `Copy as cURL` of `/rest/backup/1/export/lastTaskId`
 directly (`curl.exe ...`). If that returns 200 but the pipeline doesn't, it's a
